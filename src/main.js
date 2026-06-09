@@ -26,12 +26,7 @@ function httpToWs(url) {
 }
 
 function streamUrl(camera) {
-  const suffix = config.streamSuffix || ''
-  return `${httpToWs(config.frigateUrl)}/live/webrtc/api/ws?src=${encodeURIComponent(camera + suffix)}`
-}
-
-function snapshotUrl(camera) {
-  return `${config.frigateUrl}/api/${encodeURIComponent(camera)}/latest.jpg`
+  return `${httpToWs(config.frigateUrl)}/live/webrtc/api/ws?src=${encodeURIComponent(camera)}`
 }
 
 function prettyName(camera) {
@@ -199,7 +194,6 @@ function handleEvent(data) {
     plate: after.recognized_license_plate || null,
     zones: after.entered_zones || [],
     streamUrl: streamUrl(after.camera),
-    poster: snapshotUrl(after.camera),
     sound: prefs.sound,
     dismiss: prefs.dismissSeconds
   }
