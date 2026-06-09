@@ -1,0 +1,16 @@
+{
+  "name": "frigate-overlay",
+  "version": "0.1.0",
+  "description": "Desktop pop-up overlay that shows a live Frigate camera feed when an object is detected",
+  "license": "MIT",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "dependencies": {
+    "mqtt": "^5.10.0"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0"
+  }
+}
