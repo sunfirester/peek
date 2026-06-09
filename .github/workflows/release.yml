@@ -12,6 +12,7 @@ permissions:
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         os:
           - macos-latest
@@ -23,7 +24,7 @@ jobs:
         with:
           node-version: 20
       - run: npm ci
-      - run: npm run dist
+      - run: npm run dist -- --publish never
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.os }}
