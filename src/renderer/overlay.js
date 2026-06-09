@@ -30,13 +30,25 @@ function labelText(label) {
   return entry ? `${entry[0]} ${entry[1]}` : label
 }
 
-function startStream(url) {
+function applyVideoSettings(muted) {
+  if (!stream) return
+  if (stream.video) {
+    stream.video.muted = muted
+    stream.video.controls = false
+    stream.video.disableRemotePlayback = true
+  } else {
+    requestAnimationFrame(() => applyVideoSettings(muted))
+  }
+}
+
+function startStream(url, muted) {
   stopStream()
   stream = document.createElement('video-stream')
   stream.background = true
   stream.mode = 'webrtc,mse'
   stream.src = url
   videoBox.appendChild(stream)
+  applyVideoSettings(muted)
 }
 
 function stopStream() {
@@ -64,7 +76,7 @@ function show(event) {
   clearTimeout(dismissTimer)
   activeId = event.id
   render(event)
-  startStream(event.streamUrl)
+  startStream(event.streamUrl, !event.sound)
   card.classList.remove('hidden')
   requestAnimationFrame(() => card.classList.add('show'))
 }
@@ -87,7 +99,9 @@ window.overlay.onEvent((event) => {
     render(event)
   } else if (event.type === 'end' && event.id === activeId) {
     render(event)
-    dismissTimer = setTimeout(hide, event.dismiss * 1000)
+    if (event.dismiss > 0) {
+      dismissTimer = setTimeout(hide, event.dismiss * 1000)
+    }
   }
 })
 

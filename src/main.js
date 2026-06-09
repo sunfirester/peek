@@ -1,10 +1,25 @@
-const { app, BrowserWindow, ipcMain, screen } = require('electron')
+const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage } = require('electron')
 const path = require('path')
 const mqtt = require('mqtt')
 const { loadConfig } = require('./config')
+const { readPrefs, writePrefs } = require('./prefs')
+
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
 
 let win = null
+let tray = null
 let config = null
+let prefs = null
+const knownCameras = new Set()
+
+const DISMISS_OPTIONS = [
+  { label: '3 seconds', value: 3 },
+  { label: '5 seconds', value: 5 },
+  { label: '8 seconds', value: 8 },
+  { label: '15 seconds', value: 15 },
+  { label: '30 seconds', value: 30 },
+  { label: 'Until dismissed', value: 0 }
+]
 
 function httpToWs(url) {
   return url.replace(/^http/, 'ws')
@@ -65,15 +80,103 @@ function createWindow() {
   positionWindow()
 }
 
+function defaultPrefs() {
+  const cameras = {}
+  Object.keys(config.cameras || {}).forEach(c => {
+    cameras[c] = true
+  })
+  return {
+    cameras,
+    sound: false,
+    dismissSeconds: config.dismissSeconds != null ? config.dismissSeconds : 8
+  }
+}
+
+function loadPrefs() {
+  const base = defaultPrefs()
+  const saved = readPrefs()
+  prefs = {
+    cameras: Object.assign({}, base.cameras, saved.cameras),
+    sound: saved.sound != null ? saved.sound : base.sound,
+    dismissSeconds: saved.dismissSeconds != null ? saved.dismissSeconds : base.dismissSeconds
+  }
+  Object.keys(prefs.cameras).forEach(c => knownCameras.add(c))
+}
+
+function savePrefs() {
+  writePrefs(prefs)
+}
+
+function cameraEnabled(camera) {
+  return prefs.cameras[camera] !== false
+}
+
+function learnCamera(camera) {
+  if (knownCameras.has(camera)) return
+  knownCameras.add(camera)
+  if (prefs.cameras[camera] == null) prefs.cameras[camera] = true
+  buildMenu()
+}
+
+function buildMenu() {
+  const cameraItems = [...knownCameras].sort().map(camera => ({
+    label: prettyName(camera),
+    type: 'checkbox',
+    checked: cameraEnabled(camera),
+    click: (item) => {
+      prefs.cameras[camera] = item.checked
+      savePrefs()
+    }
+  }))
+  if (cameraItems.length === 0) {
+    cameraItems.push({ label: 'Waiting for events…', enabled: false })
+  }
+
+  const dismissItems = DISMISS_OPTIONS.map(opt => ({
+    label: opt.label,
+    type: 'radio',
+    checked: prefs.dismissSeconds === opt.value,
+    click: () => {
+      prefs.dismissSeconds = opt.value
+      savePrefs()
+    }
+  }))
+
+  const menu = Menu.buildFromTemplate([
+    { label: 'Cameras', submenu: cameraItems },
+    {
+      label: 'Sound',
+      type: 'checkbox',
+      checked: prefs.sound,
+      click: (item) => {
+        prefs.sound = item.checked
+        savePrefs()
+      }
+    },
+    { label: 'Dismiss after', submenu: dismissItems },
+    { type: 'separator' },
+    { label: 'Quit', role: 'quit' }
+  ])
+
+  if (tray) tray.setContextMenu(menu)
+}
+
+function createTray() {
+  tray = new Tray(nativeImage.createEmpty())
+  if (process.platform === 'darwin') tray.setTitle('🔔')
+  tray.setToolTip('frigate-overlay')
+  buildMenu()
+}
+
 function handleEvent(data) {
   const after = data.after || data.before
   if (!after || !after.label) return
 
+  learnCamera(after.camera)
+  if (!cameraEnabled(after.camera)) return
+
   const labels = config.labels || []
   if (labels.length && !labels.includes(after.label)) return
-
-  const cameras = config.cameras || {}
-  if (Object.keys(cameras).length && !cameras[after.camera]) return
 
   const score = Math.max(after.score || 0, after.top_score || 0)
   const minScore = config.minScore != null ? config.minScore : 0.6
@@ -90,7 +193,8 @@ function handleEvent(data) {
     plate: after.recognized_license_plate || null,
     zones: after.entered_zones || [],
     streamUrl: streamUrl(after.camera),
-    dismiss: config.dismissSeconds != null ? config.dismissSeconds : 8
+    sound: prefs.sound,
+    dismiss: prefs.dismissSeconds
   }
 
   if (!win) return
@@ -118,7 +222,10 @@ function startMqtt() {
 
 app.whenReady().then(() => {
   config = loadConfig()
+  loadPrefs()
+  if (process.platform === 'darwin' && app.dock) app.dock.hide()
   createWindow()
+  createTray()
   ipcMain.on('overlay-hide', () => {
     if (win) win.hide()
   })
