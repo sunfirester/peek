@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage } = require('electron')
+const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage, dialog, shell } = require('electron')
 const path = require('path')
 const mqtt = require('mqtt')
 const { loadConfig } = require('./config')
@@ -155,6 +155,7 @@ function buildMenu() {
     },
     { label: 'Dismiss after', submenu: dismissItems },
     { type: 'separator' },
+    { label: 'Open config folder', click: () => shell.openPath(app.getPath('userData')) },
     { label: 'Quit', role: 'quit' }
   ])
 
@@ -221,7 +222,17 @@ function startMqtt() {
 }
 
 app.whenReady().then(() => {
-  config = loadConfig()
+  try {
+    config = loadConfig()
+  } catch (err) {
+    const target = path.join(app.getPath('userData'), 'config.json')
+    dialog.showErrorBox(
+      'Frigate Overlay',
+      `config.json not found.\n\nCreate it here:\n${target}\n\nUse config.example.json as a template.`
+    )
+    app.quit()
+    return
+  }
   loadPrefs()
   if (process.platform === 'darwin' && app.dock) app.dock.hide()
   createWindow()

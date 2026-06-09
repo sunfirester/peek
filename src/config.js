@@ -1,9 +1,11 @@
 const fs = require('fs')
 const path = require('path')
+const { app } = require('electron')
 
 function loadConfig() {
   const candidates = [
     process.env.FRIGATE_OVERLAY_CONFIG,
+    path.join(app.getPath('userData'), 'config.json'),
     path.join(process.cwd(), 'config.json'),
     path.join(__dirname, '..', 'config.json')
   ].filter(Boolean)
