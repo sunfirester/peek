@@ -1,27 +1,40 @@
-# Peek
+<p align="center">
+  <img src="build/icon.png" width="120" alt="Peek" />
+</p>
 
-A lightweight desktop overlay that pops a live camera feed in the corner of your
-screen the moment [Frigate](https://frigate.video) detects an object — like the
-camera notifications on a TV, but for your computer. Works on macOS and Windows.
+<h1 align="center">Peek</h1>
 
-The card shows the live stream (WebRTC, sub-second latency, with automatic MSE
-fallback), the detected object, the score, and — when available — the recognized
-face, license plate, and entered zones.
+<p align="center">
+  A lightweight desktop overlay that pops a live camera feed in the corner of your
+  screen the moment <a href="https://frigate.video">Frigate</a> detects an object —
+  like the camera notifications on a TV, but for your computer.
+</p>
+
+<p align="center">
+  <img src="docs/screenshot.png" width="380" alt="Peek overlay" />
+</p>
+
+## Features
+
+- Live WebRTC feed (sub-second latency) the instant Frigate detects something
+- Shows the detected object, score, recognized face, license plate, and entered zones
+- Optional instant snapshot so there is no black frame while the live feed connects
+- Menu bar app: pick which cameras notify, toggle sound, set the dismiss delay
+- Frameless, always-on-top, translucent card that slides in and out
+- Cross-platform: macOS and Windows
+- Connects to your existing MQTT broker and Frigate — no server-side change
 
 ## How it works
 
 ```
 Frigate ──(MQTT frigate/events)──► main process ──IPC──► overlay window
    │                                                          │
-   └──(WebRTC/MSE via /live/.../api/ws)───────────────────────┘
+   └──(WebRTC via /live/webrtc/api/ws)────────────────────────┘
 ```
-
-The app connects to your existing MQTT broker and Frigate instance. No server-side
-change is required.
 
 ## Requirements
 
-- [Node.js](https://nodejs.org) 18+
+- [Node.js](https://nodejs.org) 18+ (to run from source)
 - A running Frigate instance with MQTT enabled
 
 ## Setup
@@ -46,11 +59,25 @@ Edit `config.json`:
 | `width`, `height` | Overlay size in pixels |
 | `dismissSeconds` | Seconds to keep the card after the event ends |
 
+When packaged, `config.json` is read from the app's user data folder (use the
+**Open config folder** menu item to locate it).
+
 ## Run
 
 ```bash
 npm start
 ```
+
+## Build
+
+```bash
+npm run dist        # current platform
+npm run dist:mac    # macOS .dmg + .zip
+npm run dist:win    # Windows installer + portable
+```
+
+Tagging a release (`git tag v0.1.0 && git push --tags`) builds macOS and Windows
+on CI and attaches the binaries to a GitHub Release.
 
 ## Credits
 

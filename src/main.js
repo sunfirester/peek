@@ -178,8 +178,9 @@ function buildMenu() {
 }
 
 function createTray() {
-  tray = new Tray(nativeImage.createEmpty())
-  if (process.platform === 'darwin') tray.setTitle('🔔')
+  const icon = nativeImage.createFromPath(path.join(__dirname, 'assets', 'trayTemplate.png'))
+  icon.setTemplateImage(true)
+  tray = new Tray(icon)
   tray.setToolTip('Peek')
   buildMenu()
 }
