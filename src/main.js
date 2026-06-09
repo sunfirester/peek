@@ -204,7 +204,7 @@ function handleEvent(data) {
     dismiss: prefs.dismissSeconds
   }
 
-  if (!win) return
+  if (!win || win.isDestroyed()) return
   if (data.type === 'new') {
     positionWindow()
     win.showInactive()
@@ -244,7 +244,7 @@ app.whenReady().then(() => {
   createWindow()
   createTray()
   ipcMain.on('overlay-hide', () => {
-    if (win) win.hide()
+    if (win && !win.isDestroyed()) win.hide()
   })
   startMqtt()
 })
