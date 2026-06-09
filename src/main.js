@@ -165,7 +165,7 @@ function buildMenu() {
 function createTray() {
   tray = new Tray(nativeImage.createEmpty())
   if (process.platform === 'darwin') tray.setTitle('🔔')
-  tray.setToolTip('frigate-overlay')
+  tray.setToolTip('Peek')
   buildMenu()
 }
 
@@ -227,7 +227,7 @@ app.whenReady().then(() => {
   } catch (err) {
     const target = path.join(app.getPath('userData'), 'config.json')
     dialog.showErrorBox(
-      'Frigate Overlay',
+      'Peek',
       `config.json not found.\n\nCreate it here:\n${target}\n\nUse config.example.json as a template.`
     )
     app.quit()

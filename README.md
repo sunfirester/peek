@@ -1,4 +1,4 @@
-# frigate-overlay
+# Peek
 
 A lightweight desktop overlay that pops a live camera feed in the corner of your
 screen the moment [Frigate](https://frigate.video) detects an object — like the

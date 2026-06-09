@@ -1,9 +1,9 @@
 {
-  "name": "frigate-overlay",
+  "name": "peek",
   "version": "0.1.0",
   "description": "Desktop pop-up overlay that shows a live Frigate camera feed when an object is detected",
   "license": "MIT",
-  "author": "frigate-overlay",
+  "author": "Peek",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
@@ -12,8 +12,8 @@
     "dist:win": "electron-builder --win"
   },
   "build": {
-    "appId": "io.github.frigate.overlay",
-    "productName": "Frigate Overlay",
+    "appId": "io.github.peek.app",
+    "productName": "Peek",
     "files": [
       "src/**/*",
       "package.json"
