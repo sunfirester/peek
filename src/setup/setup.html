@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:" />
+  <link rel="stylesheet" href="setup.css" />
+  <title>Peek Setup</title>
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>Peek</h1>
+      <p>Connect to your Frigate instance to get started.</p>
+    </header>
+
+    <section>
+      <div class="row">
+        <label for="frigateHost">Frigate host</label>
+        <input id="frigateHost" type="text" placeholder="192.168.1.10" autofocus />
+      </div>
+      <div class="row split">
+        <div>
+          <label for="frigatePort">Frigate port</label>
+          <input id="frigatePort" type="text" placeholder="5000" />
+        </div>
+        <div>
+          <label for="corner">Corner</label>
+          <select id="corner">
+            <option value="top-right">Top right</option>
+            <option value="top-left">Top left</option>
+            <option value="bottom-right">Bottom right</option>
+            <option value="bottom-left">Bottom left</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>MQTT broker</h2>
+      <div class="row split">
+        <div>
+          <label for="mqttHost">Host</label>
+          <input id="mqttHost" type="text" placeholder="same as Frigate host" />
+        </div>
+        <div>
+          <label for="mqttPort">Port</label>
+          <input id="mqttPort" type="text" placeholder="1883" />
+        </div>
+      </div>
+      <div class="row split">
+        <div>
+          <label for="mqttUser">Username</label>
+          <input id="mqttUser" type="text" placeholder="optional" autocomplete="off" />
+        </div>
+        <div>
+          <label for="mqttPass">Password</label>
+          <input id="mqttPass" type="password" placeholder="optional" autocomplete="off" />
+        </div>
+      </div>
+    </section>
+
+    <div id="status" class="hidden"></div>
+
+    <footer>
+      <button id="test" class="ghost">Test connection</button>
+      <div class="spacer"></div>
+      <button id="cancel" class="ghost">Cancel</button>
+      <button id="save" class="primary">Save &amp; start</button>
+    </footer>
+  </div>
+  <script src="setup.js"></script>
+</body>
+</html>

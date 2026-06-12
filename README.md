@@ -39,6 +39,13 @@ Frigate ──(MQTT frigate/events)──► main process ──IPC──► ove
 
 ## Setup
 
+On first launch a setup window opens automatically and asks for your Frigate
+host and MQTT broker details — no file editing required. The settings are saved
+to the app's user data folder and can be changed anytime from the menu bar
+(**Settings…**).
+
+To configure from source or by hand instead:
+
 ```bash
 npm install
 cp config.example.json config.json

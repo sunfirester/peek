@@ -1,15 +1,17 @@
-const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage, dialog, shell } = require('electron')
+const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage, shell } = require('electron')
 const path = require('path')
 const mqtt = require('mqtt')
-const { loadConfig } = require('./config')
+const { readConfig, saveConfig } = require('./config')
 const { readPrefs, writePrefs } = require('./prefs')
 
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
 
 let win = null
+let setupWin = null
 let tray = null
 let config = null
 let prefs = null
+let appStarted = false
 const knownCameras = new Set()
 
 const DISMISS_OPTIONS = [
@@ -170,6 +172,7 @@ function buildMenu() {
     },
     { label: 'Dismiss after', submenu: dismissItems },
     { type: 'separator' },
+    { label: 'Settings…', click: () => openSetup() },
     { label: 'Open config folder', click: () => shell.openPath(app.getPath('userData')) },
     { label: 'Quit', role: 'quit' }
   ])
@@ -238,26 +241,98 @@ function startMqtt() {
   })
 }
 
-app.whenReady().then(() => {
-  try {
-    config = loadConfig()
-  } catch (err) {
-    const target = path.join(app.getPath('userData'), 'config.json')
-    dialog.showErrorBox(
-      'Peek',
-      `config.json not found.\n\nCreate it here:\n${target}\n\nUse config.example.json as a template.`
-    )
-    app.quit()
-    return
-  }
+function startApp() {
+  appStarted = true
   loadPrefs()
-  if (process.platform === 'darwin' && app.dock) app.dock.hide()
   createWindow()
   createTray()
+  startMqtt()
+}
+
+function openSetup() {
+  if (setupWin && !setupWin.isDestroyed()) {
+    setupWin.focus()
+    return
+  }
+  setupWin = new BrowserWindow({
+    width: 460,
+    height: 600,
+    resizable: false,
+    fullscreenable: false,
+    maximizable: false,
+    title: 'Peek Setup',
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'setup-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  })
+  setupWin.loadFile(path.join(__dirname, 'setup', 'setup.html'))
+  setupWin.once('ready-to-show', () => setupWin.show())
+  setupWin.on('closed', () => {
+    const wasStarted = appStarted
+    setupWin = null
+    if (!wasStarted) app.quit()
+  })
+}
+
+function testConnection(cfg) {
+  return new Promise((resolve) => {
+    let done = false
+    let client = null
+    const finish = (result) => {
+      if (done) return
+      done = true
+      clearTimeout(timer)
+      try { if (client) client.end(true) } catch (err) {}
+      resolve(result)
+    }
+    const timer = setTimeout(
+      () => finish({ ok: false, error: 'Timed out. Check the host, port and credentials.' }),
+      7000
+    )
+    try {
+      client = mqtt.connect(cfg.mqtt, { reconnectPeriod: 0, connectTimeout: 6000 })
+    } catch (err) {
+      finish({ ok: false, error: 'Invalid MQTT address.' })
+      return
+    }
+    client.on('connect', () => finish({ ok: true }))
+    client.on('error', (err) => finish({ ok: false, error: (err && err.message) || 'Connection failed.' }))
+  })
+}
+
+app.whenReady().then(() => {
+  if (process.platform === 'darwin' && app.dock) app.dock.hide()
+
   ipcMain.on('overlay-hide', () => {
     if (win && !win.isDestroyed()) win.hide()
   })
-  startMqtt()
+  ipcMain.handle('setup-load', () => readConfig())
+  ipcMain.handle('setup-test', (e, cfg) => testConnection(cfg))
+  ipcMain.handle('setup-save', (e, cfg) => {
+    saveConfig(cfg)
+    if (!appStarted) {
+      config = cfg
+      startApp()
+      if (setupWin && !setupWin.isDestroyed()) setupWin.close()
+    } else {
+      app.relaunch()
+      app.exit(0)
+    }
+    return { ok: true }
+  })
+  ipcMain.on('setup-cancel', () => {
+    if (setupWin && !setupWin.isDestroyed()) setupWin.close()
+  })
+
+  config = readConfig()
+  if (config) {
+    startApp()
+  } else {
+    openSetup()
+  }
 })
 
 app.on('window-all-closed', () => {})
