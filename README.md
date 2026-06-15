@@ -11,7 +11,9 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/casi-3/peek/releases"><img src="https://img.shields.io/badge/release-v0.3.0-3ddc84" alt="Release" /></a>
+  <a href="https://github.com/casi-3/peek/releases"><img src="https://img.shields.io/badge/release-v0.3.1-3ddc84" alt="Release" /></a>
+  <a href="https://github.com/casi-3/peek/stargazers"><img src="https://img.shields.io/github/stars/casi-3/peek?color=3ddc84&label=stars" alt="Stars" /></a>
+  <a href="https://github.com/casi-3/peek/releases"><img src="https://img.shields.io/github/downloads/casi-3/peek/total?color=3ddc84&label=downloads" alt="Downloads" /></a>
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-555" alt="Platforms" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License" /></a>
 </p>
@@ -109,6 +111,19 @@ npm run dist:win    # Windows installer + portable
 
 Tagging a release (`git tag v0.1.0 && git push --tags`) builds macOS and Windows
 on CI and attaches the binaries to a GitHub Release.
+
+## Troubleshooting
+
+### macOS: "Peek is damaged and can't be opened"
+
+Builds before 0.3.1 had a broken signature seal that macOS reports as "damaged"
+on Apple Silicon once the download is quarantined. Update to 0.3.1 or later. For
+a copy already downloaded, clear the quarantine flag after moving the app to
+Applications:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Peek.app
+```
 
 ## Credits
 
