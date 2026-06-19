@@ -10,10 +10,12 @@ const fields = {
   mqttUser: el('mqttUser'),
   mqttPass: el('mqttPass'),
   autoUpdate: el('autoUpdate'),
+  openAtLogin: el('openAtLogin'),
   showDock: el('showDock'),
   sound: el('sound'),
   snapshot: el('snapshot'),
-  dismiss: el('dismiss')
+  dismiss: el('dismiss'),
+  clickAction: el('clickAction')
 }
 const statusEl = el('status')
 const testBtn = el('test')
@@ -135,6 +137,7 @@ function runtimeOpts() {
     sound: fields.sound.checked,
     snapshot: fields.snapshot.checked,
     dismissSeconds: Number(fields.dismiss.value),
+    clickAction: fields.clickAction.value,
     cameras
   }
 }
@@ -142,7 +145,12 @@ function runtimeOpts() {
 async function init() {
   const p = await window.setup.loadPrefs()
   fields.autoUpdate.checked = !!(p && p.autoUpdate)
+  fields.openAtLogin.checked = !!(p && p.openAtLogin)
   fields.showDock.checked = !!(p && p.showDock)
+  if (p && p.platform !== 'darwin' && p.platform !== 'win32') {
+    const startupRow = el('startupRow')
+    if (startupRow) startupRow.style.display = 'none'
+  }
   if (p && p.platform !== 'darwin') {
     const dockRow = el('dockRow')
     if (dockRow) dockRow.style.display = 'none'
@@ -154,6 +162,7 @@ async function init() {
     fields.sound.checked = !!p.sound
     fields.snapshot.checked = !!p.snapshot
     fields.dismiss.value = String(p.dismissSeconds != null ? p.dismissSeconds : 8)
+    fields.clickAction.value = (p && p.clickAction) || 'event'
     buildCameraList(p.cameras || [])
   }
   const existing = await window.setup.load()
@@ -195,7 +204,7 @@ saveBtn.addEventListener('click', async () => {
     return
   }
   saveBtn.disabled = true
-  await window.setup.save(buildConfig(), Object.assign({ autoUpdate: fields.autoUpdate.checked, showDock: fields.showDock.checked }, runtimeOpts()))
+  await window.setup.save(buildConfig(), Object.assign({ autoUpdate: fields.autoUpdate.checked, openAtLogin: fields.openAtLogin.checked, showDock: fields.showDock.checked }, runtimeOpts()))
 })
 
 cancelBtn.addEventListener('click', () => window.setup.cancel())

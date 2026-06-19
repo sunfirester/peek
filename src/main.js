@@ -76,6 +76,13 @@ function snapshotUrl(camera) {
   return `${config.frigateUrl}/api/${encodeURIComponent(camera)}/latest.jpg`
 }
 
+function clickUrlForEvent(camera, eventId) {
+  const action = prefs.clickAction || 'event'
+  if (action === 'disabled') return null
+  if (action === 'live') return `${config.frigateUrl}/#${camera}`
+  return `${config.frigateUrl}/explore?event_id=${encodeURIComponent(eventId)}`
+}
+
 function prettyName(camera) {
   if (config.cameras && config.cameras[camera]) return config.cameras[camera]
   return camera.replace(/[_-]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
@@ -137,8 +144,10 @@ function defaultPrefs() {
     sound: false,
     snapshot: true,
     dismissSeconds: config.dismissSeconds != null ? config.dismissSeconds : 8,
+    clickAction: 'event',
     autoUpdate: false,
     showDock: false,
+    openAtLogin: false,
     skipVersion: '',
     lastNotify: { version: '', at: 0 }
   }
@@ -152,8 +161,10 @@ function loadPrefs() {
     sound: saved.sound != null ? saved.sound : base.sound,
     snapshot: saved.snapshot != null ? saved.snapshot : base.snapshot,
     dismissSeconds: saved.dismissSeconds != null ? saved.dismissSeconds : base.dismissSeconds,
+    clickAction: saved.clickAction != null ? saved.clickAction : base.clickAction,
     autoUpdate: saved.autoUpdate != null ? saved.autoUpdate : base.autoUpdate,
     showDock: saved.showDock != null ? saved.showDock : base.showDock,
+    openAtLogin: saved.openAtLogin != null ? saved.openAtLogin : base.openAtLogin,
     skipVersion: saved.skipVersion != null ? saved.skipVersion : base.skipVersion,
     lastNotify: saved.lastNotify != null ? saved.lastNotify : base.lastNotify
   }
@@ -164,11 +175,25 @@ function savePrefs() {
   writePrefs(prefs)
 }
 
+function supportsOpenAtLogin() {
+  return process.platform === 'darwin' || process.platform === 'win32'
+}
+
+function applyOpenAtLogin(enabled) {
+  if (!supportsOpenAtLogin() || !app.isPackaged) return
+  try {
+    app.setLoginItemSettings({ openAtLogin: !!enabled, openAsHidden: true })
+  } catch (err) {
+    console.error('[peek] could not set open on startup: ' + err.message)
+  }
+}
+
 function applyRuntimePrefs(opts) {
   if (!opts) return
   if (typeof opts.sound === 'boolean') prefs.sound = opts.sound
   if (typeof opts.snapshot === 'boolean') prefs.snapshot = opts.snapshot
   if (opts.dismissSeconds != null) prefs.dismissSeconds = opts.dismissSeconds
+  if (opts.clickAction) prefs.clickAction = opts.clickAction
   if (opts.cameras && typeof opts.cameras === 'object') {
     for (const [name, on] of Object.entries(opts.cameras)) {
       prefs.cameras[name] = !!on
@@ -286,7 +311,8 @@ function handleEvent(data) {
     streamUrl: streamUrl(after.camera),
     poster: prefs.snapshot ? snapshotUrl(after.camera) : null,
     sound: prefs.sound,
-    dismiss: prefs.dismissSeconds
+    dismiss: prefs.dismissSeconds,
+    clickUrl: clickUrlForEvent(after.camera, after.id)
   }
 
   if (!win || win.isDestroyed()) return
@@ -371,6 +397,7 @@ async function initFrigateAuth() {
 function startApp() {
   appStarted = true
   loadPrefs()
+  applyOpenAtLogin(prefs.openAtLogin)
   createWindow()
   createTray()
   initFrigateAuth().then(() => fetchFrigateConfig(frigateToken))
@@ -384,7 +411,7 @@ function openSetup() {
   }
   setupWin = new BrowserWindow({
     width: 460,
-    height: appStarted ? 940 : 748,
+    height: appStarted ? 1020 : 796,
     resizable: false,
     fullscreenable: false,
     maximizable: false,
@@ -624,6 +651,11 @@ app.whenReady().then(() => {
   ipcMain.on('overlay-hide', () => {
     if (win && !win.isDestroyed()) win.hide()
   })
+  ipcMain.on('overlay-open-url', (e, url) => {
+    if (typeof url === 'string' && config && config.frigateUrl && url.startsWith(config.frigateUrl)) {
+      shell.openExternal(url)
+    }
+  })
   ipcMain.handle('setup-load', () => readConfig())
   ipcMain.handle('setup-test', (e, cfg) => testConnection(cfg))
   ipcMain.handle('setup-load-prefs', () => {
@@ -634,6 +666,8 @@ app.whenReady().then(() => {
     return {
       autoUpdate: !!(p && p.autoUpdate),
       showDock: !!(p && p.showDock),
+      openAtLogin: !!(p && p.openAtLogin),
+      clickAction: (p && p.clickAction) || 'event',
       platform: process.platform,
       started: appStarted,
       sound: !!(p && p.sound),
@@ -646,12 +680,15 @@ app.whenReady().then(() => {
     saveConfig(cfg)
     const wantUpdates = !!(opts && opts.autoUpdate)
     const wantDock = !!(opts && opts.showDock)
+    const wantOpenAtLogin = !!(opts && opts.openAtLogin)
     if (!appStarted) {
       config = cfg
       startApp()
       prefs.autoUpdate = wantUpdates
       prefs.showDock = wantDock
+      prefs.openAtLogin = wantOpenAtLogin
       savePrefs()
+      applyOpenAtLogin(wantOpenAtLogin)
       if (process.platform === 'darwin' && app.dock) {
         if (wantDock) app.dock.show()
         else app.dock.hide()
@@ -667,8 +704,10 @@ app.whenReady().then(() => {
       const wasUpdates = !!prefs.autoUpdate
       prefs.autoUpdate = wantUpdates
       prefs.showDock = wantDock
+      prefs.openAtLogin = wantOpenAtLogin
       applyRuntimePrefs(opts)
       savePrefs()
+      applyOpenAtLogin(wantOpenAtLogin)
       if (needsReconnect) {
         app.relaunch()
         app.exit(0)
