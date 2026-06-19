@@ -28,6 +28,8 @@ let pendingUpdate = null
 let appStarted = false
 let frigatePin = null
 let frigateToken = null
+let tokenRefreshTimer = null
+let mqttClient = null
 let cameraStreamMap = {}
 let certProcSet = false
 const knownCameras = new Set()
@@ -297,9 +299,9 @@ function handleEvent(data) {
 
 function startMqtt() {
   const prefix = config.topicPrefix || 'frigate'
-  const client = mqtt.connect(config.mqtt, { reconnectPeriod: 3000 })
-  client.on('connect', () => client.subscribe(`${prefix}/events`))
-  client.on('message', (topic, payload) => {
+  mqttClient = mqtt.connect(config.mqtt, { reconnectPeriod: 3000 })
+  mqttClient.on('connect', () => mqttClient.subscribe(`${prefix}/events`))
+  mqttClient.on('message', (topic, payload) => {
     let data
     try {
       data = JSON.parse(payload.toString())
@@ -325,6 +327,25 @@ function applyCertPin() {
   })
 }
 
+function parseJwtExp(token) {
+  try {
+    const b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
+    const payload = JSON.parse(Buffer.from(b64, 'base64').toString('utf8'))
+    return typeof payload.exp === 'number' ? payload.exp : null
+  } catch (err) {
+    return null
+  }
+}
+
+function scheduleTokenRefresh(token) {
+  if (tokenRefreshTimer) clearTimeout(tokenRefreshTimer)
+  const exp = parseJwtExp(token)
+  if (!exp) return
+  const msUntilExpiry = exp * 1000 - Date.now()
+  const delay = Math.min(Math.max(msUntilExpiry - 60 * 1000, 60 * 1000), 55 * 60 * 1000)
+  tokenRefreshTimer = setTimeout(() => initFrigateAuth(), delay)
+}
+
 async function initFrigateAuth() {
   if (!config || !config.frigateUser || !frigateAuth.isHttps(config.frigateUrl)) return
   try {
@@ -341,6 +362,7 @@ async function initFrigateAuth() {
       httpOnly: true,
       sameSite: 'no_restriction'
     })
+    scheduleTokenRefresh(token)
   } catch (err) {
     console.error('[frigate-auth] ' + err.message)
   }
@@ -592,6 +614,12 @@ async function installUpdate(mode) {
 app.whenReady().then(() => {
   if (!gotInstanceLock) return
   if (process.platform === 'darwin' && app.dock && !readPrefs().showDock) app.dock.hide()
+
+  const { powerMonitor } = require('electron')
+  powerMonitor.on('resume', () => {
+    if (mqttClient) mqttClient.reconnect()
+    initFrigateAuth()
+  })
 
   ipcMain.on('overlay-hide', () => {
     if (win && !win.isDestroyed()) win.hide()
