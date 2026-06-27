@@ -14,6 +14,8 @@ const fields = {
   showDock: el('showDock'),
   sound: el('sound'),
   snapshot: el('snapshot'),
+  cropToObject: el('cropToObject'),
+  highResStream: el('highResStream'),
   dismiss: el('dismiss'),
   clickAction: el('clickAction')
 }
@@ -136,6 +138,8 @@ function runtimeOpts() {
   return {
     sound: fields.sound.checked,
     snapshot: fields.snapshot.checked,
+    cropToObject: fields.cropToObject.checked,
+    highResStream: fields.highResStream.checked,
     dismissSeconds: Number(fields.dismiss.value),
     clickAction: fields.clickAction.value,
     cameras
@@ -161,6 +165,8 @@ async function init() {
     el('runtime').classList.remove('hidden')
     fields.sound.checked = !!p.sound
     fields.snapshot.checked = !!p.snapshot
+    fields.cropToObject.checked = !!p.cropToObject
+    fields.highResStream.checked = !!p.highResStream
     fields.dismiss.value = String(p.dismissSeconds != null ? p.dismissSeconds : 8)
     fields.clickAction.value = (p && p.clickAction) || 'event'
     buildCameraList(p.cameras || [])

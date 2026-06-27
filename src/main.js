@@ -32,6 +32,8 @@ let tokenRefreshTimer = null
 let mqttClient = null
 let cameraStreamMap = {}
 let certProcSet = false
+let currentDynamicWidth = null
+let cameraDetectMap = {}
 const knownCameras = new Set()
 
 const DISMISS_OPTIONS = [
@@ -48,7 +50,7 @@ function httpToWs(url) {
 }
 
 function streamUrl(camera) {
-  const streamName = cameraStreamMap[camera] || camera
+  const streamName = prefs.highResStream ? camera : (cameraStreamMap[camera] || camera)
   return `${httpToWs(config.frigateUrl)}/live/webrtc/api/ws?src=${encodeURIComponent(streamName)}`
 }
 
@@ -59,6 +61,9 @@ function buildStreamMap(frigateConfig) {
     if (streams && typeof streams === 'object') {
       const first = Object.values(streams)[0]
       if (first) cameraStreamMap[name] = first
+    }
+    if (cam && cam.detect && cam.detect.width && cam.detect.height) {
+      cameraDetectMap[name] = { width: cam.detect.width, height: cam.detect.height }
     }
   }
 }
@@ -89,7 +94,9 @@ function prettyName(camera) {
 }
 
 function overlaySize() {
-  return { width: config.width || 380, height: config.height || 300 }
+  const height = config.height || 300
+  const width = currentDynamicWidth || config.width || Math.round(height * (16 / 9))
+  return { width, height }
 }
 
 function positionWindow() {
@@ -145,6 +152,8 @@ function defaultPrefs() {
     snapshot: true,
     dismissSeconds: config.dismissSeconds != null ? config.dismissSeconds : 8,
     clickAction: 'event',
+    cropToObject: false,
+    highResStream: false,
     autoUpdate: false,
     showDock: false,
     openAtLogin: false,
@@ -162,6 +171,8 @@ function loadPrefs() {
     snapshot: saved.snapshot != null ? saved.snapshot : base.snapshot,
     dismissSeconds: saved.dismissSeconds != null ? saved.dismissSeconds : base.dismissSeconds,
     clickAction: saved.clickAction != null ? saved.clickAction : base.clickAction,
+    cropToObject: saved.cropToObject != null ? saved.cropToObject : base.cropToObject,
+    highResStream: saved.highResStream != null ? saved.highResStream : base.highResStream,
     autoUpdate: saved.autoUpdate != null ? saved.autoUpdate : base.autoUpdate,
     showDock: saved.showDock != null ? saved.showDock : base.showDock,
     openAtLogin: saved.openAtLogin != null ? saved.openAtLogin : base.openAtLogin,
@@ -192,6 +203,8 @@ function applyRuntimePrefs(opts) {
   if (!opts) return
   if (typeof opts.sound === 'boolean') prefs.sound = opts.sound
   if (typeof opts.snapshot === 'boolean') prefs.snapshot = opts.snapshot
+  if (typeof opts.cropToObject === 'boolean') prefs.cropToObject = opts.cropToObject
+  if (typeof opts.highResStream === 'boolean') prefs.highResStream = opts.highResStream
   if (opts.dismissSeconds != null) prefs.dismissSeconds = opts.dismissSeconds
   if (opts.clickAction) prefs.clickAction = opts.clickAction
   if (opts.cameras && typeof opts.cameras === 'object') {
@@ -299,6 +312,23 @@ function handleEvent(data) {
   if (data.type === 'new' && score < minScore) return
 
   const subLabel = Array.isArray(after.sub_label) ? after.sub_label[0] : after.sub_label
+  const detect = cameraDetectMap[after.camera]
+  let boxRelative = null
+  if (detect && after.box && after.box.length === 4) {
+    boxRelative = [
+      after.box[0] / detect.width,
+      after.box[1] / detect.height,
+      after.box[2] / detect.width,
+      after.box[3] / detect.height
+    ]
+  }
+
+  let streamUrlPath = streamUrl(after.camera)
+  if (after.camera === '__MOCK_CAMERA__') {
+    streamUrlPath = '__MOCK_IMAGE__'
+    boxRelative = [500/1280, 150/720, 750/1280, 650/720] // Static math for Big Buck Bunny
+  }
+
   const event = {
     id: after.id,
     type: data.type,
@@ -308,11 +338,13 @@ function handleEvent(data) {
     subLabel: subLabel || null,
     plate: after.recognized_license_plate || null,
     zones: after.entered_zones || [],
-    streamUrl: streamUrl(after.camera),
+    streamUrl: streamUrlPath,
     poster: prefs.snapshot ? snapshotUrl(after.camera) : null,
     sound: prefs.sound,
     dismiss: prefs.dismissSeconds,
-    clickUrl: clickUrlForEvent(after.camera, after.id)
+    clickUrl: clickUrlForEvent(after.camera, after.id),
+    boxRelative,
+    cropToObject: prefs.cropToObject
   }
 
   if (!win || win.isDestroyed()) return
@@ -651,6 +683,12 @@ app.whenReady().then(() => {
   ipcMain.on('overlay-hide', () => {
     if (win && !win.isDestroyed()) win.hide()
   })
+  ipcMain.on('overlay-resize', (e, { width, height }) => {
+    if (win && !win.isDestroyed()) {
+      currentDynamicWidth = width
+      positionWindow()
+    }
+  })
   ipcMain.on('overlay-open-url', (e, url) => {
     if (typeof url === 'string' && config && config.frigateUrl && url.startsWith(config.frigateUrl)) {
       shell.openExternal(url)
@@ -672,6 +710,8 @@ app.whenReady().then(() => {
       started: appStarted,
       sound: !!(p && p.sound),
       snapshot: !!(p && p.snapshot),
+      cropToObject: !!(p && p.cropToObject),
+      highResStream: !!(p && p.highResStream),
       dismissSeconds: p && p.dismissSeconds != null ? p.dismissSeconds : 8,
       cameras
     }

@@ -59,7 +59,47 @@ function labelText(label) {
   return entry ? `${entry[0]} ${entry[1]}` : label
 }
 
-function applyVideoSettings(muted) {
+function updateCrop(event) {
+  if (!stream || !event.cropToObject || !event.boxRelative) {
+    if (stream) {
+      stream.style.transition = 'transform 0.3s ease-out'
+      stream.style.transform = ''
+    }
+    return
+  }
+  
+  const boxW = event.boxRelative[2] - event.boxRelative[0]
+  const boxH = event.boxRelative[3] - event.boxRelative[1]
+  const cx = (event.boxRelative[0] + event.boxRelative[2]) / 2
+  const cy = (event.boxRelative[1] + event.boxRelative[3]) / 2
+
+  if (boxW <= 0 || boxH <= 0) return
+
+  // Pad the bounding box so it fills 50% of the screen instead of being tightly cropped
+  const idealScaleX = 1 / (boxW * 2.0)
+  const idealScaleY = 1 / (boxH * 2.0)
+  const idealScale = Math.min(idealScaleX, idealScaleY)
+  
+  // Cap the zoom factor between 1x and 4x
+  const S = Math.max(1, Math.min(4, idealScale))
+
+  // Calculate the maximum relative translation to prevent exposing black edges
+  const maxTx = (S - 1) / (2 * S)
+  const maxTy = (S - 1) / (2 * S)
+
+  let relX = 0.5 - cx
+  let relY = 0.5 - cy
+
+  // Clamp the translation so the camera stops panning precisely at the edge of the frame
+  relX = Math.max(-maxTx, Math.min(maxTx, relX))
+  relY = Math.max(-maxTy, Math.min(maxTy, relY))
+
+  stream.style.transition = 'transform 0.3s ease-out'
+  stream.style.transformOrigin = '50% 50%'
+  stream.style.transform = `scale(${S}) translate(${relX * 100}%, ${relY * 100}%)`
+}
+
+function applyVideoSettings(event, muted) {
   if (!stream) return
   if (stream.video) {
     stream.video.muted = muted
@@ -67,25 +107,57 @@ function applyVideoSettings(muted) {
     stream.video.disableRemotePlayback = true
     stream.video.addEventListener('playing', () => {
       poster.style.opacity = '0'
+      const videoWidth = stream.video.videoWidth
+      const videoHeight = stream.video.videoHeight
+      if (videoWidth && videoHeight) {
+        // ALWAYS preserve native aspect ratio for the window
+        const ratio = videoWidth / videoHeight
+        const newWidth = Math.round(window.innerHeight * ratio)
+        window.overlay.resize(newWidth, window.innerHeight)
+        
+        stream.style.width = '100%'
+        stream.style.height = '100%'
+        stream.style.maxWidth = 'none'
+        stream.style.position = 'absolute'
+        stream.style.left = '0'
+        stream.style.top = '0'
+        
+        updateCrop(event)
+      }
     }, { once: true })
   } else {
-    requestAnimationFrame(() => applyVideoSettings(muted))
+    requestAnimationFrame(() => applyVideoSettings(event, muted))
   }
 }
 
-function startStream(url, muted) {
+function startStream(event, muted) {
   stopStream()
-  stream = document.createElement('video-stream')
-  stream.background = true
-  stream.mode = 'webrtc,mse'
-  stream.src = url
+  if (event.streamUrl === '__MOCK_IMAGE__') {
+    stream = document.createElement('div')
+    stream.style.backgroundImage = 'url("https://picsum.photos/id/237/1280/720")'
+    stream.style.backgroundSize = '100% 100%'
+    stream.style.zIndex = '1'
+    
+    stream.video = document.createElement('div')
+    stream.video.videoWidth = 1280
+    stream.video.videoHeight = 720
+    stream.video.style = {}
+    stream.video.addEventListener = (evt, cb) => {
+      if (evt === 'playing') setTimeout(() => cb(), 100)
+    }
+  } else {
+    stream = document.createElement('video-stream')
+    stream.background = true
+    stream.mode = 'webrtc,mse'
+    stream.src = event.streamUrl
+  }
   videoBox.appendChild(stream)
-  applyVideoSettings(muted)
+  applyVideoSettings(event, muted)
 }
 
 function stopStream() {
   if (stream) {
-    stream.ondisconnect()
+    if (stream.ondisconnect) stream.ondisconnect()
     stream.remove()
     stream = null
   }
@@ -102,6 +174,10 @@ function render(event) {
   if (event.zones && event.zones.length) extras.push('📍 ' + event.zones.join(', '))
   infoEl.textContent = extras.join('   ')
   infoEl.style.display = extras.length ? 'block' : 'none'
+  
+  if (stream && stream.video && stream.video.videoWidth) {
+    updateCrop(event)
+  }
 }
 
 function show(event) {
@@ -120,7 +196,7 @@ function show(event) {
     poster.removeAttribute('src')
   }
   activeStreamUrl = event.streamUrl
-  startStream(event.streamUrl, !event.sound)
+  startStream(event, !event.sound)
   card.classList.remove('hidden')
   requestAnimationFrame(() => card.classList.add('show'))
 }
