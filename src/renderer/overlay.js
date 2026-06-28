@@ -62,7 +62,7 @@ function labelText(label) {
 function updateCrop(event) {
   if (!stream || !event.cropToObject || !event.boxRelative) {
     if (stream) {
-      stream.style.transition = 'transform 0.3s ease-out'
+      stream.style.transition = 'transform 0.1s ease-out'
       stream.style.transform = ''
     }
     return
@@ -94,7 +94,7 @@ function updateCrop(event) {
   relX = Math.max(-maxTx, Math.min(maxTx, relX))
   relY = Math.max(-maxTy, Math.min(maxTy, relY))
 
-  stream.style.transition = 'transform 0.3s ease-out'
+  stream.style.transition = 'transform 0.1s ease-out'
   stream.style.transformOrigin = '50% 50%'
   stream.style.transform = `scale(${S}) translate(${relX * 100}%, ${relY * 100}%)`
 }
