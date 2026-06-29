@@ -46,6 +46,8 @@ let cameraDetectMap = {}
 let certProcSet = false
 // currentDynamicWidth removed
 const knownCameras = new Set()
+const eventAliases = new Map()
+const recentEvents = new Map()
 
 const DISMISS_OPTIONS = [
   { label: '3 seconds', value: 3 },
@@ -481,6 +483,42 @@ function handleEvent(data) {
     boxRelative = [500/1280, 150/720, 750/1280, 650/720] // Static math for Big Buck Bunny
   }
 
+  let realId = after.id
+  while (eventAliases.has(realId)) {
+    realId = eventAliases.get(realId)
+  }
+  after.id = realId
+
+  if (data.type === 'new') {
+    const now = Date.now()
+    let bestMatch = null
+    let minDistance = 0.2
+
+    for (const [id, hist] of recentEvents.entries()) {
+      if (hist.camera !== after.camera || hist.label !== after.label) continue
+      if (now - hist.time > 15000) continue
+
+      if (hist.box && boxRelative) {
+        const cx1 = (hist.box[0] + hist.box[2]) / 2
+        const cy1 = (hist.box[1] + hist.box[3]) / 2
+        const cx2 = (boxRelative[0] + boxRelative[2]) / 2
+        const cy2 = (boxRelative[1] + boxRelative[3]) / 2
+        
+        const dist = Math.sqrt((cx1 - cx2) ** 2 + (cy1 - cy2) ** 2)
+        if (dist < minDistance) {
+          minDistance = dist
+          bestMatch = id
+        }
+      }
+    }
+
+    if (bestMatch) {
+      eventAliases.set(after.id, bestMatch)
+      after.id = bestMatch
+      data.type = 'update'
+    }
+  }
+
   const event = {
     id: after.id,
     type: data.type,
@@ -542,6 +580,20 @@ function handleEvent(data) {
       if (w && !w.isDestroyed()) {
         w.webContents.send('frigate-event', event)
       }
+    }
+  }
+
+  recentEvents.set(after.id, {
+    camera: after.camera,
+    label: after.label,
+    box: boxRelative,
+    time: Date.now()
+  })
+
+  if (Math.random() < 0.05) {
+    const now = Date.now()
+    for (const [id, hist] of recentEvents.entries()) {
+      if (now - hist.time > 60000) recentEvents.delete(id)
     }
   }
 }
