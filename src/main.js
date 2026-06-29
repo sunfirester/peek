@@ -155,6 +155,8 @@ function defaultPrefs() {
     cropToObject: false,
     highResStream: false,
     autoUpdate: false,
+    updateRepo: '',
+    updateBranch: '',
     showDock: false,
     openAtLogin: false,
     skipVersion: '',
@@ -174,6 +176,8 @@ function loadPrefs() {
     cropToObject: saved.cropToObject != null ? saved.cropToObject : base.cropToObject,
     highResStream: saved.highResStream != null ? saved.highResStream : base.highResStream,
     autoUpdate: saved.autoUpdate != null ? saved.autoUpdate : base.autoUpdate,
+    updateRepo: saved.updateRepo != null ? saved.updateRepo : base.updateRepo,
+    updateBranch: saved.updateBranch != null ? saved.updateBranch : base.updateBranch,
     showDock: saved.showDock != null ? saved.showDock : base.showDock,
     openAtLogin: saved.openAtLogin != null ? saved.openAtLogin : base.openAtLogin,
     skipVersion: saved.skipVersion != null ? saved.skipVersion : base.skipVersion,
@@ -533,7 +537,7 @@ const NOTIFY_THROTTLE_MS = 24 * 60 * 60 * 1000
 async function checkForUpdates(manual) {
   let latest
   try {
-    latest = await updater.getLatest()
+    latest = await updater.getLatest(prefs.updateRepo || undefined, prefs.updateBranch || undefined)
   } catch (err) {
     if (manual) {
       dialog.showMessageBox({ type: 'error', title: 'Peek', message: 'Could not check for updates.', detail: err.message })
@@ -703,6 +707,8 @@ app.whenReady().then(() => {
       : []
     return {
       autoUpdate: !!(p && p.autoUpdate),
+      updateRepo: (p && p.updateRepo) || '',
+      updateBranch: (p && p.updateBranch) || '',
       showDock: !!(p && p.showDock),
       openAtLogin: !!(p && p.openAtLogin),
       clickAction: (p && p.clickAction) || 'event',
@@ -725,6 +731,8 @@ app.whenReady().then(() => {
       config = cfg
       startApp()
       prefs.autoUpdate = wantUpdates
+      if (opts && opts.updateRepo !== undefined) prefs.updateRepo = opts.updateRepo
+      if (opts && opts.updateBranch !== undefined) prefs.updateBranch = opts.updateBranch
       prefs.showDock = wantDock
       prefs.openAtLogin = wantOpenAtLogin
       savePrefs()
@@ -743,6 +751,8 @@ app.whenReady().then(() => {
         config.frigatePassword !== cfg.frigatePassword
       const wasUpdates = !!prefs.autoUpdate
       prefs.autoUpdate = wantUpdates
+      if (opts && opts.updateRepo !== undefined) prefs.updateRepo = opts.updateRepo
+      if (opts && opts.updateBranch !== undefined) prefs.updateBranch = opts.updateBranch
       prefs.showDock = wantDock
       prefs.openAtLogin = wantOpenAtLogin
       applyRuntimePrefs(opts)

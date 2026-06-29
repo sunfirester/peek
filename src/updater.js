@@ -64,8 +64,26 @@ function pickAsset(assets, platform) {
   return names.find(a => /\.appimage$/i.test(a.name)) || null
 }
 
-async function getLatest() {
-  const data = await get(`https://api.github.com/repos/${REPO}/releases/latest`, true)
+async function getLatest(repo = REPO, branch = '') {
+  if (branch) {
+    const data = await get(`https://api.github.com/repos/${repo}/releases`, true)
+    if (!Array.isArray(data)) throw new Error('Could not list releases')
+    const release = data.find(r => r.target_commitish === branch)
+    if (!release) throw new Error(`No release found for branch ${branch}`)
+    return {
+      version: String(release.tag_name || '').replace(/^v/i, ''),
+      name: release.name || release.tag_name || '',
+      notes: release.body || '',
+      url: release.html_url || '',
+      assets: (release.assets || []).map(a => ({
+        name: a.name,
+        url: a.browser_download_url,
+        size: a.size
+      }))
+    }
+  }
+
+  const data = await get(`https://api.github.com/repos/${repo}/releases/latest`, true)
   return {
     version: String(data.tag_name || '').replace(/^v/i, ''),
     name: data.name || data.tag_name || '',
