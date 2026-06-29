@@ -16,6 +16,7 @@ const fields = {
   sound: el('sound'),
   snapshot: el('snapshot'),
   cropToObject: el('cropToObject'),
+  cropRatio: el('cropRatio'),
   highResStream: el('highResStream'),
   dismiss: el('dismiss'),
   clickAction: el('clickAction')
@@ -140,6 +141,7 @@ function runtimeOpts() {
     sound: fields.sound.checked,
     snapshot: fields.snapshot.checked,
     cropToObject: fields.cropToObject.checked,
+    cropRatio: fields.cropRatio.value,
     highResStream: fields.highResStream.checked,
     dismissSeconds: Number(fields.dismiss.value),
     clickAction: fields.clickAction.value,
@@ -168,6 +170,7 @@ async function init() {
     fields.sound.checked = !!p.sound
     fields.snapshot.checked = !!p.snapshot
     fields.cropToObject.checked = !!p.cropToObject
+    fields.cropRatio.value = p.cropRatio || '16:9'
     fields.highResStream.checked = !!p.highResStream
     fields.dismiss.value = String(p.dismissSeconds != null ? p.dismissSeconds : 8)
     fields.clickAction.value = (p && p.clickAction) || 'event'
@@ -188,6 +191,12 @@ async function init() {
     fields.mqttPass.value = m.pass
     fields.corner.value = existing.corner || 'top-right'
   }
+  
+  const toggleCropRatio = () => {
+    el('cropRatioRow').style.display = fields.cropToObject.checked ? 'flex' : 'none'
+  }
+  fields.cropToObject.addEventListener('change', toggleCropRatio)
+  toggleCropRatio()
 }
 
 testBtn.addEventListener('click', async () => {

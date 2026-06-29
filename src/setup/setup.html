@@ -89,6 +89,14 @@
         <span class="check-text">Crop to detected object</span>
         <span class="info" tabindex="0">i<span class="tip">Dynamically zooms and pans the overlay to fit the bounding box of the detected object.</span></span>
       </label>
+      <div class="row" id="cropRatioRow">
+        <label for="cropRatio">Crop Aspect Ratio</label>
+        <select id="cropRatio">
+          <option value="16:9">16:9</option>
+          <option value="4:3">4:3</option>
+          <option value="1:1">1:1</option>
+        </select>
+      </div>
       <label class="check">
         <input id="highResStream" type="checkbox" />
         <span class="check-text">Prefer high-res stream</span>

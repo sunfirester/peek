@@ -64,10 +64,15 @@ function updateCrop(event) {
     if (stream) {
       stream.style.transition = 'transform 0.1s ease-out'
       stream.style.transform = ''
+      stream.style.transformOrigin = '50% 50%'
     }
     return
   }
   
+  const videoWidth = stream.video.videoWidth
+  const videoHeight = stream.video.videoHeight
+  if (!videoWidth || !videoHeight) return
+
   const boxW = event.boxRelative[2] - event.boxRelative[0]
   const boxH = event.boxRelative[3] - event.boxRelative[1]
   const cx = (event.boxRelative[0] + event.boxRelative[2]) / 2
@@ -75,28 +80,37 @@ function updateCrop(event) {
 
   if (boxW <= 0 || boxH <= 0) return
 
-  // Pad the bounding box so it fills 50% of the screen instead of being tightly cropped
-  const idealScaleX = 1 / (boxW * 2.0)
-  const idealScaleY = 1 / (boxH * 2.0)
-  const idealScale = Math.min(idealScaleX, idealScaleY)
+  const VW = videoWidth
+  const VH = videoHeight
   
-  // Cap the zoom factor between 1x and 4x
-  const S = Math.max(1, Math.min(4, idealScale))
-
-  // Calculate the maximum relative translation to prevent exposing black edges
-  const maxTx = (S - 1) / (2 * S)
-  const maxTy = (S - 1) / (2 * S)
-
-  let relX = 0.5 - cx
-  let relY = 0.5 - cy
-
-  // Clamp the translation so the camera stops panning precisely at the edge of the frame
-  relX = Math.max(-maxTx, Math.min(maxTx, relX))
-  relY = Math.max(-maxTy, Math.min(maxTy, relY))
-
+  const objCx = cx * VW
+  const objCy = cy * VH
+  
+  const winW = window.innerWidth
+  const winH = window.innerHeight
+  const winCx = winW / 2
+  const winCy = winH / 2
+  
+  const objW = boxW * VW
+  const objH = boxH * VH
+  
+  const idealScale = Math.min(winW / (objW * 2), winH / (objH * 2))
+  const minScaleToCover = Math.max(winW / VW, winH / VH)
+  
+  const S = Math.max(minScaleToCover, Math.min(minScaleToCover * 4, idealScale))
+  
+  let tx = winCx - (objCx * S)
+  let ty = winCy - (objCy * S)
+  
+  const minTx = winW - (VW * S)
+  const minTy = winH - (VH * S)
+  
+  tx = Math.min(0, Math.max(minTx, tx))
+  ty = Math.min(0, Math.max(minTy, ty))
+  
   stream.style.transition = 'transform 0.1s ease-out'
-  stream.style.transformOrigin = '50% 50%'
-  stream.style.transform = `scale(${S}) translate(${relX * 100}%, ${relY * 100}%)`
+  stream.style.transformOrigin = '0 0'
+  stream.style.transform = `translate(${tx}px, ${ty}px) scale(${S})`
 }
 
 function applyVideoSettings(event, muted) {
@@ -110,13 +124,18 @@ function applyVideoSettings(event, muted) {
       const videoWidth = stream.video.videoWidth
       const videoHeight = stream.video.videoHeight
       if (videoWidth && videoHeight) {
-        // ALWAYS preserve native aspect ratio for the window
-        const ratio = videoWidth / videoHeight
-        const newWidth = Math.round(window.innerHeight * ratio)
-        window.overlay.resize(newWidth, window.innerHeight)
+        if (!event.cropToObject) {
+          // ALWAYS preserve native aspect ratio for the window
+          const ratio = videoWidth / videoHeight
+          const newWidth = Math.round(window.innerHeight * ratio)
+          window.overlay.resize(newWidth, window.innerHeight)
+          stream.style.width = '100%'
+          stream.style.height = '100%'
+        } else {
+          stream.style.width = videoWidth + 'px'
+          stream.style.height = videoHeight + 'px'
+        }
         
-        stream.style.width = '100%'
-        stream.style.height = '100%'
         stream.style.maxWidth = 'none'
         stream.style.position = 'absolute'
         stream.style.left = '0'
@@ -227,6 +246,12 @@ window.overlay.onEvent((event) => {
       dismissTimer = setTimeout(hide, event.dismiss * 1000)
       startTimerBar(event.dismiss)
     }
+  }
+})
+
+window.overlay.onSetMuted && window.overlay.onSetMuted((muted) => {
+  if (stream && stream.video) {
+    stream.video.muted = muted
   }
 })
 

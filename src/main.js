@@ -18,7 +18,18 @@ if (!gotInstanceLock) {
   if (process.platform === 'darwin') app.on('activate', () => openSetup())
 }
 
-let win = null
+const activeWindows = new Map()
+let indicatorWin = null
+const pendingEvents = new Map()
+const closedEvents = new Set()
+
+function markEventClosed(id) {
+  closedEvents.add(id)
+  if (closedEvents.size > 500) {
+    const first = closedEvents.keys().next().value
+    closedEvents.delete(first)
+  }
+}
 let setupWin = null
 let updateWin = null
 let tray = null
@@ -32,7 +43,7 @@ let tokenRefreshTimer = null
 let mqttClient = null
 let cameraStreamMap = {}
 let certProcSet = false
-let currentDynamicWidth = null
+// currentDynamicWidth removed
 let cameraDetectMap = {}
 const knownCameras = new Set()
 
@@ -93,27 +104,78 @@ function prettyName(camera) {
   return camera.replace(/[_-]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
 
-function overlaySize() {
+function overlaySize(dynamicWidth = null) {
   const height = config.height || 300
-  const width = currentDynamicWidth || config.width || Math.round(height * (16 / 9))
+  let width
+  if (prefs.cropToObject) {
+    const ratioStr = prefs.cropRatio || '16:9'
+    const parts = ratioStr.split(':')
+    const ratio = parts.length === 2 ? Number(parts[0]) / Number(parts[1]) : (16/9)
+    width = Math.round(height * ratio)
+  } else {
+    width = dynamicWidth || config.width || Math.round(height * (16 / 9))
+  }
   return { width, height }
 }
 
-function positionWindow() {
+function positionWindows() {
   const area = screen.getPrimaryDisplay().workArea
-  const { width, height } = overlaySize()
   const margin = config.margin != null ? config.margin : 24
   const corner = config.corner || 'top-right'
-  let x = area.x + area.width - width - margin
-  let y = area.y + margin
-  if (corner.includes('left')) x = area.x + margin
-  if (corner.includes('bottom')) y = area.y + area.height - height - margin
-  win.setBounds({ x, y, width, height })
+  
+  let currentY = margin
+  if (corner.includes('bottom')) currentY = area.height - margin
+
+  const windows = Array.from(activeWindows.values())
+  windows.forEach((w, i) => {
+    if (w.isDestroyed()) return
+    const { width, height } = overlaySize(w.dynamicWidth)
+    let x = area.x + area.width - width - margin
+    if (corner.includes('left')) x = area.x + margin
+    
+    let y = area.y + currentY
+    if (corner.includes('bottom')) {
+      y = area.y + currentY - height
+      currentY -= (height + margin)
+    } else {
+      currentY += (height + margin)
+    }
+    w.setBounds({ x, y, width, height })
+  })
+
+  // Position indicatorWin
+  if (indicatorWin && !indicatorWin.isDestroyed()) {
+    if (pendingEvents.size > 0) {
+      const { width } = overlaySize() // default approx width
+      const indHeight = 32
+      let x = area.x + area.width - width - margin
+      if (corner.includes('left')) x = area.x + margin
+      
+      let y = area.y + currentY
+      if (corner.includes('bottom')) {
+        y = area.y + currentY - indHeight
+      }
+      indicatorWin.setBounds({ x, y, width, height: indHeight })
+      indicatorWin.webContents.send('set-count', pendingEvents.size)
+      indicatorWin.showInactive()
+    } else {
+      indicatorWin.hide()
+    }
+  }
 }
 
-function createWindow() {
+function updateAudio() {
+  const windows = Array.from(activeWindows.values())
+  windows.forEach((w, i) => {
+    if (!w.isDestroyed()) {
+      w.webContents.send('set-muted', !prefs.sound || i !== 0)
+    }
+  })
+}
+
+function createEventWindow(eventId) {
   const { width, height } = overlaySize()
-  win = new BrowserWindow({
+  const w = new BrowserWindow({
     width,
     height,
     frame: false,
@@ -135,10 +197,64 @@ function createWindow() {
       backgroundThrottling: false
     }
   })
-  win.setAlwaysOnTop(true, 'screen-saver')
-  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  win.loadFile(path.join(__dirname, 'renderer', 'index.html'))
-  positionWindow()
+  w.setAlwaysOnTop(true, 'screen-saver')
+  w.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  w.loadFile(path.join(__dirname, 'renderer', 'index.html'))
+  w.eventId = eventId
+  w.dynamicWidth = null
+  
+  w.on('closed', () => {
+    activeWindows.delete(eventId)
+    markEventClosed(eventId)
+    
+    if (pendingEvents.size > 0 && activeWindows.size < 4) {
+      const firstPending = pendingEvents.keys().next().value
+      const pendingEvent = pendingEvents.get(firstPending)
+      pendingEvents.delete(firstPending)
+      
+      const newWin = createEventWindow(firstPending)
+      activeWindows.set(firstPending, newWin)
+      newWin.showInactive()
+      newWin.webContents.on('did-finish-load', () => {
+        pendingEvent.sound = prefs.sound
+        pendingEvent.type = 'new'
+        newWin.webContents.send('frigate-event', pendingEvent)
+        updateAudio()
+      })
+    }
+    
+    positionWindows()
+    updateAudio()
+  })
+  
+  return w
+}
+
+function initIndicatorWin() {
+  if (indicatorWin) return
+  indicatorWin = new BrowserWindow({
+    width: 300,
+    height: 32,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    hasShadow: false,
+    show: false,
+    backgroundColor: '#00000000',
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false
+    }
+  })
+  indicatorWin.setAlwaysOnTop(true, 'screen-saver')
+  indicatorWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  indicatorWin.loadFile(path.join(__dirname, 'renderer', 'indicator.html'))
 }
 
 function defaultPrefs() {
@@ -153,6 +269,7 @@ function defaultPrefs() {
     dismissSeconds: config.dismissSeconds != null ? config.dismissSeconds : 8,
     clickAction: 'event',
     cropToObject: false,
+    cropRatio: '16:9',
     highResStream: false,
     autoUpdate: false,
     updateRepo: '',
@@ -173,6 +290,7 @@ function loadPrefs() {
     dismissSeconds: saved.dismissSeconds != null ? saved.dismissSeconds : base.dismissSeconds,
     clickAction: saved.clickAction != null ? saved.clickAction : base.clickAction,
     cropToObject: saved.cropToObject != null ? saved.cropToObject : base.cropToObject,
+    cropRatio: saved.cropRatio != null ? saved.cropRatio : base.cropRatio,
     highResStream: saved.highResStream != null ? saved.highResStream : base.highResStream,
     autoUpdate: saved.autoUpdate != null ? saved.autoUpdate : base.autoUpdate,
     updateRepo: saved.updateRepo != null ? saved.updateRepo : base.updateRepo,
@@ -206,6 +324,7 @@ function applyRuntimePrefs(opts) {
   if (typeof opts.sound === 'boolean') prefs.sound = opts.sound
   if (typeof opts.snapshot === 'boolean') prefs.snapshot = opts.snapshot
   if (typeof opts.cropToObject === 'boolean') prefs.cropToObject = opts.cropToObject
+  if (opts.cropRatio) prefs.cropRatio = opts.cropRatio
   if (typeof opts.highResStream === 'boolean') prefs.highResStream = opts.highResStream
   if (opts.dismissSeconds != null) prefs.dismissSeconds = opts.dismissSeconds
   if (opts.clickAction) prefs.clickAction = opts.clickAction
@@ -346,15 +465,52 @@ function handleEvent(data) {
     dismiss: prefs.dismissSeconds,
     clickUrl: clickUrlForEvent(after.camera, after.id),
     boxRelative,
-    cropToObject: prefs.cropToObject
+    cropToObject: prefs.cropToObject,
+    cropRatio: prefs.cropRatio || '16:9'
   }
 
-  if (!win || win.isDestroyed()) return
-  if (data.type === 'new') {
-    positionWindow()
-    win.showInactive()
+  const targetId = after.id
+
+  if (closedEvents.has(targetId)) return
+
+  if (data.type === 'update' && !activeWindows.has(targetId) && !pendingEvents.has(targetId)) {
+    data.type = 'new'
+    event.type = 'new'
   }
-  win.webContents.send('frigate-event', event)
+
+  if (data.type === 'new') {
+    if (activeWindows.has(targetId)) {
+      const w = activeWindows.get(targetId)
+      if (w && !w.isDestroyed()) w.webContents.send('frigate-event', event)
+    } else if (activeWindows.size >= 4) {
+      pendingEvents.set(targetId, event)
+      positionWindows()
+    } else {
+      const w = createEventWindow(targetId)
+      activeWindows.set(targetId, w)
+      positionWindows()
+      w.showInactive()
+      w.webContents.on('did-finish-load', () => {
+        w.webContents.send('frigate-event', event)
+        updateAudio()
+      })
+    }
+  } else {
+    if (pendingEvents.has(targetId)) {
+      if (data.type === 'end') {
+        pendingEvents.delete(targetId)
+        markEventClosed(targetId)
+      } else {
+        pendingEvents.set(targetId, event)
+      }
+      positionWindows()
+    } else {
+      const w = activeWindows.get(targetId)
+      if (w && !w.isDestroyed()) {
+        w.webContents.send('frigate-event', event)
+      }
+    }
+  }
 }
 
 function startMqtt() {
@@ -432,7 +588,7 @@ function startApp() {
   appStarted = true
   loadPrefs()
   applyOpenAtLogin(prefs.openAtLogin)
-  createWindow()
+  initIndicatorWin()
   createTray()
   initFrigateAuth().then(() => fetchFrigateConfig(frigateToken))
   startMqtt()
@@ -682,13 +838,15 @@ app.whenReady().then(() => {
     initFrigateAuth()
   })
 
-  ipcMain.on('overlay-hide', () => {
-    if (win && !win.isDestroyed()) win.hide()
+  ipcMain.on('overlay-hide', (e) => {
+    const w = BrowserWindow.fromWebContents(e.sender)
+    if (w && !w.isDestroyed()) w.close()
   })
   ipcMain.on('overlay-resize', (e, { width, height }) => {
-    if (win && !win.isDestroyed()) {
-      currentDynamicWidth = width
-      positionWindow()
+    const w = BrowserWindow.fromWebContents(e.sender)
+    if (w && !w.isDestroyed()) {
+      w.dynamicWidth = width
+      positionWindows()
     }
   })
   ipcMain.on('overlay-open-url', (e, url) => {
@@ -714,6 +872,7 @@ app.whenReady().then(() => {
       sound: !!(p && p.sound),
       snapshot: !!(p && p.snapshot),
       cropToObject: !!(p && p.cropToObject),
+      cropRatio: (p && p.cropRatio) || '16:9',
       highResStream: !!(p && p.highResStream),
       dismissSeconds: p && p.dismissSeconds != null ? p.dismissSeconds : 8,
       cameras
