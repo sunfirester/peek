@@ -45,7 +45,6 @@ let cameraStreamMap = {}
 let cameraDetectMap = {}
 let certProcSet = false
 // currentDynamicWidth removed
-let cameraDetectMap = {}
 const knownCameras = new Set()
 
 const DISMISS_OPTIONS = [
