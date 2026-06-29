@@ -353,6 +353,9 @@ function show(event) {
 function hide() {
   clearTimeout(dismissTimer)
   resetTimerBar()
+  
+  const eventIds = Array.from(activeEvents.keys())
+  
   clearBoxes()
   activeEvents.clear()
   colorMap.clear()
@@ -364,7 +367,7 @@ function hide() {
   setTimeout(() => {
     stopStream()
     card.classList.add('hidden')
-    window.overlay.hide()
+    window.overlay.hide(eventIds)
   }, 320)
 }
 

@@ -213,7 +213,6 @@ function createEventWindow(eventId) {
   
   w.on('closed', () => {
     activeWindows.delete(eventId)
-    markEventClosed(eventId)
     
     if (pendingEvents.size > 0 && activeWindows.size < 4) {
       const firstPending = pendingEvents.keys().next().value
@@ -505,7 +504,7 @@ function handleEvent(data) {
 
   const targetId = prefs.showAllObjectsInFrame !== false ? after.camera : after.id
 
-  if (closedEvents.has(targetId)) return
+  if (closedEvents.has(after.id)) return
 
   if (data.type === 'update' && !activeWindows.has(targetId) && !pendingEvents.has(targetId)) {
     data.type = 'new'
@@ -872,9 +871,14 @@ app.whenReady().then(() => {
     initFrigateAuth()
   })
 
-  ipcMain.on('overlay-hide', (e) => {
+  ipcMain.on('overlay-hide', (e, eventIds) => {
     const w = BrowserWindow.fromWebContents(e.sender)
-    if (w && !w.isDestroyed()) w.close()
+    if (w && !w.isDestroyed()) {
+      if (Array.isArray(eventIds)) {
+        eventIds.forEach(id => markEventClosed(id))
+      }
+      w.close()
+    }
   })
   ipcMain.on('overlay-resize', (e, { width, height }) => {
     const w = BrowserWindow.fromWebContents(e.sender)
