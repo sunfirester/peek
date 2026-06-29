@@ -77,7 +77,6 @@ function buildStreamMap(frigateConfig) {
     if (detect && detect.width && detect.height) {
       cameraDetectMap[name] = { width: detect.width, height: detect.height }
     }
-    }
   }
 }
 
