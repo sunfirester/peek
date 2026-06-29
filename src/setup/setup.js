@@ -18,6 +18,8 @@ const fields = {
   cropToObject: el('cropToObject'),
   cropRatio: el('cropRatio'),
   highResStream: el('highResStream'),
+  showAllObjectsInFrame: el('showAllObjectsInFrame'),
+  showBoundingBoxes: el('showBoundingBoxes'),
   dismiss: el('dismiss'),
   clickAction: el('clickAction')
 }
@@ -143,6 +145,8 @@ function runtimeOpts() {
     cropToObject: fields.cropToObject.checked,
     cropRatio: fields.cropRatio.value,
     highResStream: fields.highResStream.checked,
+    showAllObjectsInFrame: fields.showAllObjectsInFrame.checked,
+    showBoundingBoxes: fields.showBoundingBoxes.checked,
     dismissSeconds: Number(fields.dismiss.value),
     clickAction: fields.clickAction.value,
     cameras
@@ -172,6 +176,8 @@ async function init() {
     fields.cropToObject.checked = !!p.cropToObject
     fields.cropRatio.value = p.cropRatio || '16:9'
     fields.highResStream.checked = !!p.highResStream
+    fields.showAllObjectsInFrame.checked = p.showAllObjectsInFrame !== false
+    fields.showBoundingBoxes.checked = p.showBoundingBoxes !== false
     fields.dismiss.value = String(p.dismissSeconds != null ? p.dismissSeconds : 8)
     fields.clickAction.value = (p && p.clickAction) || 'event'
     buildCameraList(p.cameras || [])

@@ -1,9 +1,8 @@
-## What's new in v0.4.3
+## What's new in v0.4.4
 
 **Notifications**
-- Click a notification to open the detection in Frigate in your browser. You can pick the event details, the live view, or turn it off, under Settings.
+- See every object detected in the frame at once, each as a chip with its label and confidence score.
+- Bounding boxes draw over the live video, color matched to each object's chip, so you can tell what is what at a glance.
+- Two new toggles, "Show all objects in frame" and "Show bounding boxes", in the menu bar and Settings.
 
-**App**
-- New "Open on startup" option so Peek can launch with your computer and wait quietly in the menu bar.
-
-Thanks to @therealkeeg1 for the contribution.
+Thanks to @NickLD for the contribution.

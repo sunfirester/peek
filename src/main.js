@@ -42,6 +42,7 @@ let frigateToken = null
 let tokenRefreshTimer = null
 let mqttClient = null
 let cameraStreamMap = {}
+let cameraDetectMap = {}
 let certProcSet = false
 // currentDynamicWidth removed
 let cameraDetectMap = {}
@@ -73,10 +74,19 @@ function buildStreamMap(frigateConfig) {
       const first = Object.values(streams)[0]
       if (first) cameraStreamMap[name] = first
     }
-    if (cam && cam.detect && cam.detect.width && cam.detect.height) {
-      cameraDetectMap[name] = { width: cam.detect.width, height: cam.detect.height }
+    const detect = cam && cam.detect
+    if (detect && detect.width && detect.height) {
+      cameraDetectMap[name] = { width: detect.width, height: detect.height }
+    }
     }
   }
+}
+
+function normalizeBox(box, camera) {
+  if (!Array.isArray(box) || box.length < 4) return null
+  const dims = cameraDetectMap[camera]
+  if (!dims) return null
+  return [box[0] / dims.width, box[1] / dims.height, box[2] / dims.width, box[3] / dims.height]
 }
 
 async function fetchFrigateConfig(token) {
@@ -271,6 +281,8 @@ function defaultPrefs() {
     cropToObject: false,
     cropRatio: '16:9',
     highResStream: false,
+    showAllObjectsInFrame: true,
+    showBoundingBoxes: true,
     autoUpdate: false,
     updateRepo: '',
     showDock: false,
@@ -292,6 +304,8 @@ function loadPrefs() {
     cropToObject: saved.cropToObject != null ? saved.cropToObject : base.cropToObject,
     cropRatio: saved.cropRatio != null ? saved.cropRatio : base.cropRatio,
     highResStream: saved.highResStream != null ? saved.highResStream : base.highResStream,
+    showAllObjectsInFrame: saved.showAllObjectsInFrame != null ? saved.showAllObjectsInFrame : base.showAllObjectsInFrame,
+    showBoundingBoxes: saved.showBoundingBoxes != null ? saved.showBoundingBoxes : base.showBoundingBoxes,
     autoUpdate: saved.autoUpdate != null ? saved.autoUpdate : base.autoUpdate,
     updateRepo: saved.updateRepo != null ? saved.updateRepo : base.updateRepo,
     showDock: saved.showDock != null ? saved.showDock : base.showDock,
@@ -328,6 +342,8 @@ function applyRuntimePrefs(opts) {
   if (typeof opts.highResStream === 'boolean') prefs.highResStream = opts.highResStream
   if (opts.dismissSeconds != null) prefs.dismissSeconds = opts.dismissSeconds
   if (opts.clickAction) prefs.clickAction = opts.clickAction
+  if (typeof opts.showAllObjectsInFrame === 'boolean') prefs.showAllObjectsInFrame = opts.showAllObjectsInFrame
+  if (typeof opts.showBoundingBoxes === 'boolean') prefs.showBoundingBoxes = opts.showBoundingBoxes
   if (opts.cameras && typeof opts.cameras === 'object') {
     for (const [name, on] of Object.entries(opts.cameras)) {
       prefs.cameras[name] = !!on
@@ -387,6 +403,24 @@ function buildMenu() {
       checked: prefs.snapshot,
       click: (item) => {
         prefs.snapshot = item.checked
+        savePrefs()
+      }
+    },
+    {
+      label: 'Show all objects in frame',
+      type: 'checkbox',
+      checked: prefs.showAllObjectsInFrame !== false,
+      click: (item) => {
+        prefs.showAllObjectsInFrame = item.checked
+        savePrefs()
+      }
+    },
+    {
+      label: 'Show bounding boxes',
+      type: 'checkbox',
+      checked: prefs.showBoundingBoxes !== false,
+      click: (item) => {
+        prefs.showBoundingBoxes = item.checked
         savePrefs()
       }
     },
@@ -459,6 +493,7 @@ function handleEvent(data) {
     subLabel: subLabel || null,
     plate: after.recognized_license_plate || null,
     zones: after.entered_zones || [],
+    box: prefs.showBoundingBoxes !== false ? normalizeBox(after.box, after.camera) : null,
     streamUrl: streamUrlPath,
     poster: prefs.snapshot ? snapshotUrl(after.camera) : null,
     sound: prefs.sound,
@@ -466,10 +501,11 @@ function handleEvent(data) {
     clickUrl: clickUrlForEvent(after.camera, after.id),
     boxRelative,
     cropToObject: prefs.cropToObject,
-    cropRatio: prefs.cropRatio || '16:9'
+    cropRatio: prefs.cropRatio || '16:9',
+    showAllObjectsInFrame: prefs.showAllObjectsInFrame !== false
   }
 
-  const targetId = after.id
+  const targetId = prefs.showAllObjectsInFrame !== false ? after.camera : after.id
 
   if (closedEvents.has(targetId)) return
 
@@ -875,6 +911,8 @@ app.whenReady().then(() => {
       cropRatio: (p && p.cropRatio) || '16:9',
       highResStream: !!(p && p.highResStream),
       dismissSeconds: p && p.dismissSeconds != null ? p.dismissSeconds : 8,
+      showAllObjectsInFrame: p && p.showAllObjectsInFrame !== false,
+      showBoundingBoxes: p && p.showBoundingBoxes !== false,
       cameras
     }
   })

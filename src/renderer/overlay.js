@@ -13,22 +13,35 @@ const LABELS = {
   package: ['📦', 'Package']
 }
 
+const COLORS = ['#ff6b6b', '#51cf66', '#339af0', '#fcc419', '#cc5de8', '#ff922b']
+
 const card = document.getElementById('card')
 const timerBar = document.getElementById('timer-bar')
 const camEl = document.getElementById('cam')
-const badgeEl = document.getElementById('badge')
-const scoreEl = document.getElementById('score')
+const detectionsEl = document.getElementById('detections')
 const infoEl = document.getElementById('info')
 const videoBox = document.getElementById('video')
+const bboxCanvas = document.getElementById('bbox-canvas')
+const bboxCtx = bboxCanvas.getContext('2d')
 const poster = document.getElementById('poster')
 const closeBtn = document.getElementById('close')
 
-let activeId = null
+const activeEvents = new Map()
+const colorMap = new Map()
+let colorIndex = 0
 let activeStreamUrl = null
 let activeClickUrl = null
 let stream = null
 let dismissTimer = null
 let timerAnimation = null
+
+function assignColor(id) {
+  if (!colorMap.has(id)) {
+    colorMap.set(id, COLORS[colorIndex % COLORS.length])
+    colorIndex++
+  }
+  return colorMap.get(id)
+}
 
 function showTimerBarActive() {
   if (timerAnimation) { timerAnimation.cancel(); timerAnimation = null }
@@ -59,12 +72,18 @@ function labelText(label) {
   return entry ? `${entry[0]} ${entry[1]}` : label
 }
 
-function updateCrop(event) {
-  if (!stream || !event.cropToObject || !event.boxRelative) {
+function updateCrop() {
+  if (!stream || activeEvents.size === 0) return
+  
+  const firstEvent = activeEvents.values().next().value
+  if (!firstEvent.cropToObject) {
     if (stream) {
       stream.style.transition = 'transform 0.1s ease-out'
       stream.style.transform = ''
       stream.style.transformOrigin = '50% 50%'
+      bboxCanvas.style.transition = 'transform 0.1s ease-out'
+      bboxCanvas.style.transform = ''
+      bboxCanvas.style.transformOrigin = '50% 50%'
     }
     return
   }
@@ -73,12 +92,22 @@ function updateCrop(event) {
   const videoHeight = stream.video.videoHeight
   if (!videoWidth || !videoHeight) return
 
-  const boxW = event.boxRelative[2] - event.boxRelative[0]
-  const boxH = event.boxRelative[3] - event.boxRelative[1]
-  const cx = (event.boxRelative[0] + event.boxRelative[2]) / 2
-  const cy = (event.boxRelative[1] + event.boxRelative[3]) / 2
+  let minX = 1, minY = 1, maxX = 0, maxY = 0
+  for (const ev of activeEvents.values()) {
+    if (ev.boxRelative) {
+      minX = Math.min(minX, ev.boxRelative[0])
+      minY = Math.min(minY, ev.boxRelative[1])
+      maxX = Math.max(maxX, ev.boxRelative[2])
+      maxY = Math.max(maxY, ev.boxRelative[3])
+    }
+  }
+  
+  if (maxX <= minX || maxY <= minY) return
 
-  if (boxW <= 0 || boxH <= 0) return
+  const boxW = maxX - minX
+  const boxH = maxY - minY
+  const cx = (minX + maxX) / 2
+  const cy = (minY + maxY) / 2
 
   const VW = videoWidth
   const VH = videoHeight
@@ -111,6 +140,109 @@ function updateCrop(event) {
   stream.style.transition = 'transform 0.1s ease-out'
   stream.style.transformOrigin = '0 0'
   stream.style.transform = `translate(${tx}px, ${ty}px) scale(${S})`
+  
+  bboxCanvas.style.transition = 'transform 0.1s ease-out'
+  bboxCanvas.style.transformOrigin = '0 0'
+  bboxCanvas.style.transform = `translate(${tx}px, ${ty}px) scale(${S})`
+}
+
+function syncCanvasSize() {
+  const w = bboxCanvas.offsetWidth
+  const h = bboxCanvas.offsetHeight
+  if (!w || !h) return false
+  if (bboxCanvas.width !== w || bboxCanvas.height !== h) {
+    bboxCanvas.width = w
+    bboxCanvas.height = h
+  }
+  return true
+}
+
+function getVideoTransform() {
+  if (!stream || !stream.video) return null
+  const vw = stream.video.videoWidth
+  const vh = stream.video.videoHeight
+  if (!vw || !vh) return null
+
+  const cw = bboxCanvas.width
+  const ch = bboxCanvas.height
+  const videoAspect = vw / vh
+  const containerAspect = cw / ch
+
+  let scale, offsetX, offsetY
+  if (videoAspect > containerAspect) {
+    scale = ch / vh
+    offsetX = (cw - vw * scale) / 2
+    offsetY = 0
+  } else {
+    scale = cw / vw
+    offsetX = 0
+    offsetY = (ch - vh * scale) / 2
+  }
+  return { scale, offsetX, offsetY, vw, vh }
+}
+
+function drawBoxes() {
+  if (!syncCanvasSize()) return
+  bboxCtx.clearRect(0, 0, bboxCanvas.width, bboxCanvas.height)
+
+  const t = getVideoTransform()
+  if (!t) return
+
+  for (const [id, ev] of activeEvents) {
+    if (!ev.box) continue
+    const color = colorMap.get(id) || '#ffffff'
+    const [x1, y1, x2, y2] = ev.box
+
+    const cx = x1 * t.vw * t.scale + t.offsetX
+    const cy = y1 * t.vh * t.scale + t.offsetY
+    const bw = (x2 - x1) * t.vw * t.scale
+    const bh = (y2 - y1) * t.vh * t.scale
+    const r = Math.min(6, bw / 4, bh / 4)
+
+    bboxCtx.beginPath()
+    bboxCtx.roundRect(cx, cy, bw, bh, r)
+    bboxCtx.shadowColor = 'rgba(0,0,0,0.75)'
+    bboxCtx.shadowBlur = 4
+    bboxCtx.strokeStyle = color
+    bboxCtx.lineWidth = 2
+    bboxCtx.stroke()
+    bboxCtx.shadowBlur = 0
+  }
+}
+
+function clearBoxes() {
+  bboxCtx.clearRect(0, 0, bboxCanvas.width, bboxCanvas.height)
+}
+
+function renderDetections() {
+  const events = [...activeEvents.values()]
+  if (events.length > 0) camEl.textContent = events[0].name
+
+  detectionsEl.innerHTML = ''
+  for (const ev of events) {
+    const color = colorMap.get(ev.id) || 'rgba(255, 255, 255, 0.45)'
+    const chip = document.createElement('div')
+    chip.className = 'chip'
+    chip.style.borderColor = color
+    const name = document.createElement('span')
+    name.textContent = labelText(ev.label)
+    const score = document.createElement('span')
+    score.className = 'chip-score'
+    score.textContent = Math.round(ev.score * 100) + '%'
+    chip.appendChild(name)
+    chip.appendChild(score)
+    detectionsEl.appendChild(chip)
+  }
+
+  const extras = []
+  const subLabels = [...new Set(events.flatMap(e => e.subLabel ? [e.subLabel] : []))]
+  const plates = [...new Set(events.flatMap(e => e.plate ? [e.plate] : []))]
+  const zones = [...new Set(events.flatMap(e => e.zones || []))]
+  if (subLabels.length) extras.push('👤 ' + subLabels.join(', '))
+  if (plates.length) extras.push('🔢 ' + plates.join(', '))
+  if (zones.length) extras.push('📍 ' + zones.join(', '))
+  infoEl.textContent = extras.join('   ')
+  infoEl.style.display = extras.length ? 'block' : 'none'
 }
 
 function applyVideoSettings(event, muted) {
@@ -125,15 +257,18 @@ function applyVideoSettings(event, muted) {
       const videoHeight = stream.video.videoHeight
       if (videoWidth && videoHeight) {
         if (!event.cropToObject) {
-          // ALWAYS preserve native aspect ratio for the window
           const ratio = videoWidth / videoHeight
           const newWidth = Math.round(window.innerHeight * ratio)
           window.overlay.resize(newWidth, window.innerHeight)
           stream.style.width = '100%'
           stream.style.height = '100%'
+          bboxCanvas.style.width = '100%'
+          bboxCanvas.style.height = '100%'
         } else {
           stream.style.width = videoWidth + 'px'
           stream.style.height = videoHeight + 'px'
+          bboxCanvas.style.width = videoWidth + 'px'
+          bboxCanvas.style.height = videoHeight + 'px'
         }
         
         stream.style.maxWidth = 'none'
@@ -141,7 +276,8 @@ function applyVideoSettings(event, muted) {
         stream.style.left = '0'
         stream.style.top = '0'
         
-        updateCrop(event)
+        drawBoxes()
+        updateCrop()
       }
     }, { once: true })
   } else {
@@ -181,32 +317,27 @@ function stopStream() {
     stream = null
   }
 }
-
-function render(event) {
-  camEl.textContent = event.name
-  badgeEl.textContent = labelText(event.label)
-  scoreEl.textContent = Math.round(event.score * 100) + '%'
-
-  const extras = []
-  if (event.subLabel) extras.push('👤 ' + event.subLabel)
-  if (event.plate) extras.push('🔢 ' + event.plate)
-  if (event.zones && event.zones.length) extras.push('📍 ' + event.zones.join(', '))
-  infoEl.textContent = extras.join('   ')
-  infoEl.style.display = extras.length ? 'block' : 'none'
-  
-  if (stream && stream.video && stream.video.videoWidth) {
-    updateCrop(event)
-  }
-}
-
 function show(event) {
   clearTimeout(dismissTimer)
-  activeId = event.id
+
+  const reuseCard = card.classList.contains('show') && event.streamUrl === activeStreamUrl
+
+  if (!reuseCard || !event.showAllObjectsInFrame) {
+    activeEvents.clear()
+    activeStreamUrl = event.streamUrl
+  }
+
   activeClickUrl = event.clickUrl || null
   card.classList.toggle('clickable', !!activeClickUrl)
-  render(event)
+
+  assignColor(event.id)
+  activeEvents.set(event.id, event)
+  renderDetections()
+  drawBoxes()
   showTimerBarActive()
-  if (stream && event.streamUrl === activeStreamUrl && card.classList.contains('show')) return
+
+  if (reuseCard) return
+
   if (event.poster) {
     poster.style.opacity = '1'
     poster.src = event.poster + (event.poster.includes('?') ? '&' : '?') + 't=' + Date.now()
@@ -214,7 +345,6 @@ function show(event) {
     poster.style.opacity = '0'
     poster.removeAttribute('src')
   }
-  activeStreamUrl = event.streamUrl
   startStream(event, !event.sound)
   card.classList.remove('hidden')
   requestAnimationFrame(() => card.classList.add('show'))
@@ -223,7 +353,10 @@ function show(event) {
 function hide() {
   clearTimeout(dismissTimer)
   resetTimerBar()
-  activeId = null
+  clearBoxes()
+  activeEvents.clear()
+  colorMap.clear()
+  colorIndex = 0
   activeStreamUrl = null
   activeClickUrl = null
   card.classList.remove('clickable')
@@ -238,13 +371,24 @@ function hide() {
 window.overlay.onEvent((event) => {
   if (event.type === 'new') {
     show(event)
-  } else if (event.type === 'update' && event.id === activeId) {
-    render(event)
-  } else if (event.type === 'end' && event.id === activeId) {
-    render(event)
-    if (event.dismiss > 0) {
-      dismissTimer = setTimeout(hide, event.dismiss * 1000)
-      startTimerBar(event.dismiss)
+  } else if (event.type === 'update' && activeEvents.has(event.id)) {
+    activeEvents.set(event.id, event)
+    renderDetections()
+    drawBoxes()
+    updateCrop()
+  } else if (event.type === 'end' && activeEvents.has(event.id)) {
+    activeEvents.delete(event.id)
+    colorMap.delete(event.id)
+    if (activeEvents.size > 0) {
+      renderDetections()
+      drawBoxes()
+      updateCrop()
+    } else {
+      clearBoxes()
+      if (event.dismiss > 0) {
+        dismissTimer = setTimeout(hide, event.dismiss * 1000)
+        startTimerBar(event.dismiss)
+      }
     }
   }
 })
