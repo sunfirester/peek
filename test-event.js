@@ -18,7 +18,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 async function simulateSequence(client, prefix, camera, label, startBox, endBox, durationMs, steps, delayBeforeStart = 0) {
   await sleep(delayBeforeStart);
-  const eventId = `test-${camera}-${Date.now()}`;
+  const eventId = `test-${camera}-${Date.now()}-${Math.random().toString(36).substring(7)}`;
   
   const sendEvent = (type, box) => {
     const payload = {
