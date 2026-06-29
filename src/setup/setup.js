@@ -11,7 +11,6 @@ const fields = {
   mqttPass: el('mqttPass'),
   autoUpdate: el('autoUpdate'),
   updateRepo: el('updateRepo'),
-  updateBranch: el('updateBranch'),
   openAtLogin: el('openAtLogin'),
   showDock: el('showDock'),
   sound: el('sound'),
@@ -152,7 +151,6 @@ async function init() {
   const p = await window.setup.loadPrefs()
   fields.autoUpdate.checked = !!(p && p.autoUpdate)
   fields.updateRepo.value = (p && p.updateRepo) || ''
-  fields.updateBranch.value = (p && p.updateBranch) || ''
   fields.openAtLogin.checked = !!(p && p.openAtLogin)
   fields.showDock.checked = !!(p && p.showDock)
   if (p && p.platform !== 'darwin' && p.platform !== 'win32') {
@@ -214,7 +212,7 @@ saveBtn.addEventListener('click', async () => {
     return
   }
   saveBtn.disabled = true
-  await window.setup.save(buildConfig(), Object.assign({ autoUpdate: fields.autoUpdate.checked, updateRepo: fields.updateRepo.value.trim(), updateBranch: fields.updateBranch.value.trim(), openAtLogin: fields.openAtLogin.checked, showDock: fields.showDock.checked }, runtimeOpts()))
+  await window.setup.save(buildConfig(), Object.assign({ autoUpdate: fields.autoUpdate.checked, updateRepo: fields.updateRepo.value.trim(), openAtLogin: fields.openAtLogin.checked, showDock: fields.showDock.checked }, runtimeOpts()))
 })
 
 cancelBtn.addEventListener('click', () => window.setup.cancel())
