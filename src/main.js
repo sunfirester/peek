@@ -22,6 +22,7 @@ const activeWindows = new Map()
 let indicatorWin = null
 const pendingEvents = new Map()
 const closedEvents = new Set()
+const eventGroupMap = new Map()
 
 function markEventClosed(id) {
   closedEvents.add(id)
@@ -128,6 +129,61 @@ function overlaySize(dynamicWidth = null) {
   return { width, height }
 }
 
+function getViewportForBox(boxRelative, camera) {
+  const detect = cameraDetectMap[camera] || { width: 1280, height: 720 }
+  const VW = detect.width
+  const VH = detect.height
+  const { width: winW, height: winH } = overlaySize()
+  
+  if (!boxRelative || !prefs.cropToObject) {
+    return { minX: 0, minY: 0, maxX: 1, maxY: 1 }
+  }
+
+  const minX = boxRelative[0]
+  const minY = boxRelative[1]
+  const maxX = boxRelative[2]
+  const maxY = boxRelative[3]
+
+  const boxW = maxX - minX
+  const boxH = maxY - minY
+  const cx = (minX + maxX) / 2
+  const cy = (minY + maxY) / 2
+
+  const objCx = cx * VW
+  const objCy = cy * VH
+
+  const winCx = winW / 2
+  const winCy = winH / 2
+
+  const objW = boxW * VW
+  const objH = boxH * VH
+
+  const idealScale = Math.min(winW / (objW * 2), winH / (objH * 2))
+  const minScaleToCover = Math.max(winW / VW, winH / VH)
+
+  const S = Math.max(minScaleToCover, Math.min(minScaleToCover * 4, idealScale))
+
+  let tx = winCx - (objCx * S)
+  let ty = winCy - (objCy * S)
+
+  const minTx = winW - (VW * S)
+  const minTy = winH - (VH * S)
+
+  tx = Math.min(0, Math.max(minTx, tx))
+  ty = Math.min(0, Math.max(minTy, ty))
+
+  return {
+    minX: -tx / (VW * S),
+    maxX: (winW - tx) / (VW * S),
+    minY: -ty / (VH * S),
+    maxY: (winH - ty) / (VH * S)
+  }
+}
+
+function viewportsOverlap(vp1, vp2) {
+  return !(vp1.maxX < vp2.minX || vp1.minX > vp2.maxX || vp1.maxY < vp2.minY || vp1.minY > vp2.maxY)
+}
+
 function positionWindows() {
   const area = screen.getPrimaryDisplay().workArea
   const margin = config.margin != null ? config.margin : 24
@@ -212,6 +268,16 @@ function createEventWindow(eventId) {
   w.loadFile(path.join(__dirname, 'renderer', 'index.html'))
   w.eventId = eventId
   w.dynamicWidth = null
+  w.isLoading = true
+  w.eventQueue = []
+  
+  w.webContents.on('did-finish-load', () => {
+    w.isLoading = false
+    for (const ev of w.eventQueue) {
+      w.webContents.send('frigate-event', ev)
+    }
+    w.eventQueue = []
+  })
   
   w.on('closed', () => {
     activeWindows.delete(eventId)
@@ -224,10 +290,10 @@ function createEventWindow(eventId) {
       const newWin = createEventWindow(firstPending)
       activeWindows.set(firstPending, newWin)
       newWin.showInactive()
+      pendingEvent.sound = prefs.sound
+      pendingEvent.type = 'new'
+      newWin.eventQueue.push(pendingEvent)
       newWin.webContents.on('did-finish-load', () => {
-        pendingEvent.sound = prefs.sound
-        pendingEvent.type = 'new'
-        newWin.webContents.send('frigate-event', pendingEvent)
         updateAudio()
       })
     }
@@ -537,10 +603,69 @@ function handleEvent(data) {
     boxRelative,
     cropToObject: prefs.cropToObject,
     cropRatio: prefs.cropRatio || '16:9',
-    showAllObjectsInFrame: prefs.showAllObjectsInFrame !== false
+    showAllObjectsInFrame: true
   }
 
-  const targetId = prefs.showAllObjectsInFrame !== false ? after.camera : after.id
+  let targetId = prefs.showAllObjectsInFrame !== false ? after.camera : after.id
+
+  if (prefs.showAllObjectsInFrame === false) {
+    if (data.type === 'end') {
+      if (eventGroupMap.has(after.id)) {
+        targetId = eventGroupMap.get(after.id)
+        eventGroupMap.delete(after.id)
+      }
+    } else {
+      let currentGroup = eventGroupMap.get(after.id)
+      let needsNewGroup = false
+
+      if (currentGroup && (activeWindows.has(currentGroup) || pendingEvents.has(currentGroup))) {
+        const primaryHist = recentEvents.get(currentGroup)
+        if (primaryHist && primaryHist.box && event.boxRelative) {
+          const vpA = getViewportForBox(primaryHist.box, after.camera)
+          const vpB = getViewportForBox(event.boxRelative, after.camera)
+          if (!viewportsOverlap(vpA, vpB)) {
+            const wOld = activeWindows.get(currentGroup)
+            if (wOld && !wOld.isDestroyed()) {
+              wOld.webContents.send('frigate-event', { ...event, type: 'end' })
+            }
+            currentGroup = null
+            needsNewGroup = true
+            data.type = 'new'
+            event.type = 'new'
+          }
+        }
+      }
+
+      if (!currentGroup) {
+        let bestGroup = null
+        if (event.boxRelative) {
+          const vpB = getViewportForBox(event.boxRelative, after.camera)
+          const candidates = [...activeWindows.keys(), ...pendingEvents.keys()]
+          for (const winId of candidates) {
+            if (activeWindows.has(winId) && activeWindows.get(winId).isDestroyed()) continue
+            const hist = recentEvents.get(winId)
+            if (hist && hist.camera === after.camera && hist.box) {
+              const vpA = getViewportForBox(hist.box, after.camera)
+              if (viewportsOverlap(vpA, vpB)) {
+                bestGroup = winId
+                break
+              }
+            }
+          }
+        }
+        
+        if (bestGroup) {
+          targetId = bestGroup
+          eventGroupMap.set(after.id, targetId)
+        } else {
+          targetId = after.id
+          eventGroupMap.set(after.id, targetId)
+        }
+      } else {
+        targetId = currentGroup
+      }
+    }
+  }
 
   if (closedEvents.has(after.id)) return
 
@@ -552,7 +677,13 @@ function handleEvent(data) {
   if (data.type === 'new') {
     if (activeWindows.has(targetId)) {
       const w = activeWindows.get(targetId)
-      if (w && !w.isDestroyed()) w.webContents.send('frigate-event', event)
+      if (w && !w.isDestroyed()) {
+        if (w.isLoading) {
+          w.eventQueue.push(event)
+        } else {
+          w.webContents.send('frigate-event', event)
+        }
+      }
     } else if (activeWindows.size >= 4) {
       pendingEvents.set(targetId, event)
       positionWindows()
@@ -561,8 +692,8 @@ function handleEvent(data) {
       activeWindows.set(targetId, w)
       positionWindows()
       w.showInactive()
+      w.eventQueue.push(event)
       w.webContents.on('did-finish-load', () => {
-        w.webContents.send('frigate-event', event)
         updateAudio()
       })
     }
@@ -578,7 +709,11 @@ function handleEvent(data) {
     } else {
       const w = activeWindows.get(targetId)
       if (w && !w.isDestroyed()) {
-        w.webContents.send('frigate-event', event)
+        if (w.isLoading) {
+          w.eventQueue.push(event)
+        } else {
+          w.webContents.send('frigate-event', event)
+        }
       }
     }
   }

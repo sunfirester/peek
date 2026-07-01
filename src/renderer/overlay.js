@@ -320,7 +320,7 @@ function stopStream() {
 function show(event) {
   clearTimeout(dismissTimer)
 
-  const reuseCard = card.classList.contains('show') && event.streamUrl === activeStreamUrl
+  const reuseCard = activeStreamUrl && event.streamUrl === activeStreamUrl
 
   if (!reuseCard || !event.showAllObjectsInFrame) {
     activeEvents.clear()

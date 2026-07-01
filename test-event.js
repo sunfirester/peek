@@ -60,62 +60,29 @@ client.on('connect', async () => {
   console.log('Connected to MQTT. Starting dynamic sequences...');
   const prefix = config.topicPrefix || 'frigate';
   
-  // 1. Person on the doorbell, moving left to right
+  // 1. Person on the doorbell, stationary
   const s1 = simulateSequence(
     client, prefix, 
     'doorbell', 'person', 
-    [100, 100, 400, 600],  // start box
-    [800, 100, 1100, 600], // end box
-    5000,  // 5 seconds total
-    25,    // 25 updates (5/sec)
+    [100, 100, 300, 300],  // stationary box
+    [100, 100, 300, 300], 
+    3000,  // 3 seconds total
+    40,    // updates
     0      // start immediately
   );
 
-  // 2. Car on the front_duo, moving right to left
+  // 2. Dog on the doorbell, starts overlapping with the person, then moves far away
   const s2 = simulateSequence(
     client, prefix, 
-    'front_duo', 'car', 
-    [300, 150, 400, 250], 
-    [50, 150, 150, 250], 
-    8000, 
+    'doorbell', 'dog', 
+    [150, 150, 250, 250], // starts inside/overlapping the person's box
+    [2200, 1500, 2400, 1700], // moves far away, should trigger a split
+    3000, 
     40,   
     0      // start immediately
   );
-  
-  // 3. Dog on the doorbell, appearing a bit later
-  const s3 = simulateSequence(
-    client, prefix, 
-    'doorbell', 'dog', 
-    [200, 300, 250, 350], 
-    [100, 300, 150, 350], 
-    4000, 
-    20, 
-    0      // start immediately
-  );
 
-  // 4. Second car on the front duo to trigger the 4-window limit
-  const s4 = simulateSequence(
-    client, prefix, 
-    'front_duo', 'car', 
-    [100, 200, 200, 300], 
-    [250, 200, 350, 300], 
-    6000, 
-    30, 
-    0      // start immediately
-  );
-  
-  // 5. Package drop-off to push past the 4-window limit and trigger the indicator
-  const s5 = simulateSequence(
-    client, prefix, 
-    'doorbell', 'package', 
-    [150, 250, 250, 350], 
-    [150, 250, 250, 350], 
-    6000, 
-    5, 
-    0      // start immediately
-  );
-
-  await Promise.all([s1, s2, s3, s4, s5]);
+  await Promise.all([s1, s2]);
   console.log('✅ All dynamic mock sequences completed!');
   client.end();
 });
